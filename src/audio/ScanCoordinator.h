@@ -62,4 +62,10 @@ private:
     std::function<void (int, int, juce::String)> progressCb;
     std::function<void (ScanOutcome)> finishedCb;
     std::unique_ptr<ScanProcessRunner> runner;
+
+    // Lebenszeit-Wächter für bereits via callAsync eingereihte Callbacks: Destruktor
+    // und die Lambdas laufen beide auf dem Message-Thread, daher ist ein simples bool
+    // hinter shared_ptr racefrei; der Worker-Thread kopiert nur den shared_ptr selbst
+    // (dessen Refcount threadsicher ist), fasst den bool aber nie an.
+    std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 };

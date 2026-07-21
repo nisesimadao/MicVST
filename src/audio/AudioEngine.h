@@ -110,6 +110,7 @@ private:
     LevelMeter inputMeter, outputMeter;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
+    bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
     juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
     juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren

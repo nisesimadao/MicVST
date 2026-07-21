@@ -163,7 +163,7 @@ void AudioEngine::loadPluginCache()
 
 void AudioEngine::startBackgroundScan()
 {
-    if (isScanning()) return;
+    if (isScanning()) { rescanQueued = true; return; }
 
     juce::VST3PluginFormat vst3;
     auto files = filterFilesNeedingScan (listVst3Files(), knownPlugins, vst3, skippedPlugins);
@@ -204,6 +204,8 @@ void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
         pendingPlugins.clear();
     }
     if (onScanFinished) onScanFinished();
+
+    if (rescanQueued) { rescanQueued = false; startBackgroundScan(); }
 }
 
 void AudioEngine::rescanAllPlugins()

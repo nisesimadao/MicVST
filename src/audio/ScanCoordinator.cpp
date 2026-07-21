@@ -140,6 +140,10 @@ ScanCoordinator::ScanCoordinator (juce::StringArray filesToScan,
 
 ScanCoordinator::~ScanCoordinator()
 {
+    // Vor stopThread markieren: bereits via callAsync eingereihte Lambdas (siehe run())
+    // prüfen *alive und verwerfen sich selbst, statt den Callback auf einem ggf. schon
+    // zerstörten Owner aufzurufen. stopThread kann solche Nachrichten nicht zurückziehen.
+    *alive = false;
     stopThread (5000);   // shouldExit -> Runner killt den Kindprozess binnen ~100 ms
 }
 
@@ -149,11 +153,12 @@ void ScanCoordinator::run()
         [this] (int cur, int total, const juce::String& name)
         {
             if (progressCb)
-                juce::MessageManager::callAsync ([cb = progressCb, cur, total, name]
-                                                 { cb (cur, total, name); });
+                juce::MessageManager::callAsync ([alive = alive, cb = progressCb, cur, total, name]
+                                                 { if (*alive) cb (cur, total, name); });
         },
         [this] { return threadShouldExit(); });
 
     if (outcome.completed && finishedCb)
-        juce::MessageManager::callAsync ([cb = finishedCb, outcome] { cb (outcome); });
+        juce::MessageManager::callAsync ([alive = alive, cb = finishedCb, outcome]
+                                         { if (*alive) cb (outcome); });
 }

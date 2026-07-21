@@ -15,7 +15,7 @@ public:
     // von der Single-Instance-Logik weggefangen werden.
     bool moreThanOneInstanceAllowed() override
     {
-        return juce::JUCEApplicationBase::getCommandLineParameters().contains ("--scan");
+        return juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--scan");
     }
 
     // Kindmodus: genau EIN VST3 scannen und die Beschreibungen als XML in die --out-Datei
@@ -45,7 +45,7 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
-        if (commandLine.contains ("--scan"))
+        if (juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--scan"))
         {
             setApplicationReturnValue (runScanChildMode());
             quit();

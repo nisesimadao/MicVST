@@ -77,7 +77,7 @@ private:
 
     AudioEngine& engine;
     juce::TextButton addBtn { "+ Plugin" };
-    juce::TextButton manageFoldersBtn { "Manage custom VST3 Folders" };
+    juce::TextButton manageFoldersBtn { "Manage VST3 Folders" };
     juce::Viewport viewport;
     juce::Component rowsHolder;          // Inhalt des Viewports (trägt die Zeilen)
     juce::OwnedArray<Row> rows;

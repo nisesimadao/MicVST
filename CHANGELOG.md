@@ -9,6 +9,8 @@ project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - Window and tray icon now appear immediately; the VST3 scan runs in the background with
   visible progress (count + plugin name).
+- "Manage custom VST3 Folders" is now "Manage VST3 Folders" and its menu also offers
+  "Rescan all plugins" (previously only in the "+ Plugin" menu).
 
 ### Fixed
 - A hanging or crashing VST3 no longer blocks startup invisibly: each plugin is scanned in an

@@ -362,10 +362,18 @@ void PluginListView::showFolderMenu()
         }
     }
 
+    // Rescan auch hier anbieten (nicht nur im "+ Plugin"-Menü): auch ohne Custom-Ordner
+    // muss man neu scannen können. Während eines laufenden Scans deaktiviert, weil
+    // rescanAllPlugins dann bewusst nichts tut.
+    constexpr int rescanItemId = 3;
+    m.addSeparator();
+    m.addItem (rescanItemId, "Rescan all plugins", ! engine.isScanning());
+
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&manageFoldersBtn),
-        [this] (int res)
+        [this, rescanItemId] (int res)
         {
             if (res == 1) { chooseFolder(); return; }
+            if (res == rescanItemId) { engine.rescanAllPlugins(); updateScanUi(); return; }
             if (res >= 1000)
             {
                 const auto& f = engine.getPluginFolders();

@@ -4,6 +4,17 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Window and tray icon now appear immediately; the VST3 scan runs in the background with
+  visible progress (count + plugin name).
+
+### Fixed
+- A hanging or crashing VST3 no longer blocks startup invisibly: each plugin is scanned in an
+  isolated helper process with a 30 s timeout and gets skipped (with a hint in the UI) instead.
+- Scan results are cached (`plugin_cache.xml`) - startup no longer rescans every plugin.
+
 ## [1.0.2] - 2026-06-05
 
 ### Added

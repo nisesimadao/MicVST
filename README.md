@@ -66,8 +66,10 @@ boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed
 - Horizontal **in/out level meters** with a dB scale
 - **Drag-to-reorder** plugin list, per-row bypass, remove with confirmation, per-plugin editor
   windows
-- Scans the standard VST3 folder; **add custom VST3 folders** via “+ Plugin → Add VST3 folder…”
-  (a plugin that crashes the scan is remembered and skipped next time)
+- Scans the standard VST3 folder; **add custom VST3 folders** via “+ Plugin → Add VST3 folder...”
+  Scanning runs **in the background** (window opens instantly) in isolated helper processes -
+  a plugin that crashes or hangs the scan is skipped automatically and listed as skipped;
+  results are cached, so later starts are instant. “+ Plugin → Rescan all plugins” starts fresh.
 - Persistent settings (`%APPDATA%\MicVST\config.xml`), low latency, silent **tray autostart**
 - Optional, **opt-in update check** (off by default): one request to the GitHub releases API on
   startup; no telemetry, no auto-installer

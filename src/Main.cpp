@@ -73,9 +73,9 @@ public:
         updateCheckAsked    = state.updateCheckAsked;
         lastNotifiedVersion = state.lastNotifiedVersion;
 
-        // Custom-VST3-Ordner übernehmen, dann scannen (vor applyState und vor der UI).
+        // Custom-VST3-Ordner übernehmen, dann Cache laden (vor applyState und vor der UI).
         engine->setPluginFolders (state.pluginFolders);
-        engine->scanPlugins();
+        engine->loadPluginCache();   // KEIN synchroner Scan mehr — Cache reicht zum Start
         if (firstRun)
         {
             // Output bevorzugt ein virtuelles Kabel (VB-Cable & Co): die App liefert dann
@@ -135,6 +135,13 @@ public:
             // Bei aktivem Check sofort einen Lauf starten (auch im stillen Autostart -> Tray-Bubble).
             mc->setUpdateCheckEnabled (updateCheckEnabled, true);
         }
+
+        // Altes Dead-Man's-Pedal aufräumen (ersetzt durch Skip-Liste im plugin_cache.xml).
+        juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("MicVST").getChildFile ("plugin_scan.tmp").deleteFile();
+
+        // Fenster + Tray stehen -> jetzt (und erst jetzt) im Hintergrund scannen.
+        engine->startBackgroundScan();
 
         // Erststart: einmalig nach Zustimmung fragen (nur mit sichtbarem Fenster).
         if (! silent && ! updateCheckAsked)

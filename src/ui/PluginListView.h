@@ -68,6 +68,13 @@ private:
         std::function<void (EditorWindow*)> onClose;
     };
 
+    void updateScanUi();                 // Statuszeile/Skip-Hinweis + addBtn-Enable aktualisieren
+    juce::Label scanLabel;               // "Scanning plugins... 12/34 - Name"
+    double scanProgress = 0.0;           // 0..1, von ProgressBar per Referenz gelesen
+    juce::ProgressBar scanBar { scanProgress };
+    juce::Label skipLabel;               // "N plugin(s) skipped - hover for details"
+    juce::TooltipWindow tooltipWindow { this };
+
     AudioEngine& engine;
     juce::TextButton addBtn { "+ Plugin" };
     juce::TextButton manageFoldersBtn { "Manage custom VST3 Folders" };

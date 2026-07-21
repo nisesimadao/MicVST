@@ -152,6 +152,28 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     viewport.setScrollBarsShown (true, false);
     addAndMakeVisible (viewport);
 
+    scanLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
+    scanLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    addChildComponent (scanLabel);       // nur sichtbar während des Scans
+    addChildComponent (scanBar);
+    skipLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+    skipLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
+    addChildComponent (skipLabel);
+
+    engine.onScanProgress = [this] (int cur, int total, juce::String name)
+    {
+        scanProgress = total > 0 ? (double) (cur - 1) / (double) total : 0.0;
+        scanLabel.setText ("Scanning plugins... " + juce::String (cur) + "/" + juce::String (total)
+                           + " - " + name, juce::dontSendNotification);
+        updateScanUi();
+    };
+    engine.onScanFinished = [this]
+    {
+        rebuildRows();   // Kette kann per deferred Restore gerade erst entstanden sein
+        updateScanUi();
+    };
+    updateScanUi();
+
     rebuildRows();
     startTimer (500);   // Plugin-Latenz live halten (z. B. wenn ein Plugin Lookahead an-/abschaltet)
 }
@@ -170,6 +192,20 @@ void PluginListView::resized()
     addBtn.setBounds (top.removeFromLeft (110).withSizeKeepingCentre (106, btnH));
     manageFoldersBtn.setBounds (top.removeFromRight (200).withSizeKeepingCentre (196, btnH));   // rechtsbündig
     r.removeFromTop (4);
+
+    if (scanLabel.isVisible())
+    {
+        auto row = r.removeFromTop (22);
+        scanBar.setBounds (row.removeFromRight (120).reduced (0, 4));
+        scanLabel.setBounds (row);
+        r.removeFromTop (2);
+    }
+    else if (skipLabel.isVisible())
+    {
+        skipLabel.setBounds (r.removeFromTop (20));
+        r.removeFromTop (2);
+    }
+
     viewport.setBounds (r);
 
     const int vh = viewport.getHeight();
@@ -254,16 +290,19 @@ void PluginListView::showAddMenu()
     auto& known = engine.getKnownPlugins();
     constexpr int monoToStereoItemId = 100000;   // außerhalb des Plugin-Index-Bereichs
     constexpr int stereoToMonoItemId = 100001;
+    constexpr int rescanItemId = 100002;
 
     juce::PopupMenu m;
     m.addItem (monoToStereoItemId, "Mono -> Stereo (built-in)");
     m.addItem (stereoToMonoItemId, "Stereo -> Mono (built-in)");
     m.addSeparator();
+    m.addItem (rescanItemId, "Rescan all plugins");
+    m.addSeparator();
     auto types = known.getTypes();
     for (int i = 0; i < types.size(); ++i)
         m.addItem (i + 1, types[i].name);
 
-    m.showMenuAsync (juce::PopupMenu::Options(), [this, types, monoToStereoItemId, stereoToMonoItemId] (int res)
+    m.showMenuAsync (juce::PopupMenu::Options(), [this, types, monoToStereoItemId, stereoToMonoItemId, rescanItemId] (int res)
     {
         if (res <= 0) return;
 
@@ -280,6 +319,8 @@ void PluginListView::showAddMenu()
             commitChange();
             return;
         }
+
+        if (res == rescanItemId) { engine.rescanAllPlugins(); updateScanUi(); return; }
 
         auto desc = types[res - 1];
         double sr = engine.getDeviceManager().getCurrentAudioDevice() != nullptr
@@ -361,4 +402,25 @@ void PluginListView::openEditor (int row)
     w->centreWithSize (w->getWidth(), w->getHeight());
     w->setVisible (true);
     editorWindows.add (w);
+}
+
+void PluginListView::updateScanUi()
+{
+    const bool scanning = engine.isScanning();
+    addBtn.setEnabled (! scanning);
+    scanLabel.setVisible (scanning);
+    scanBar.setVisible (scanning);
+
+    const auto& skips = engine.getSkippedPlugins();
+    skipLabel.setVisible (! scanning && ! skips.isEmpty());
+    if (skipLabel.isVisible())
+    {
+        skipLabel.setText (juce::String (skips.size()) + " plugin(s) skipped - hover for details",
+                           juce::dontSendNotification);
+        juce::String tip;
+        for (auto& s : skips)
+            tip << juce::File (s.file).getFileNameWithoutExtension() << " (" << s.reason << ")\n";
+        skipLabel.setTooltip (tip.trimEnd());
+    }
+    resized();
 }

@@ -10,10 +10,48 @@ class MicVSTApplication : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override    { return "MicVST"; }
     const juce::String getApplicationVersion() override { return "1.0.2"; }
-    bool moreThanOneInstanceAllowed() override          { return false; }
+
+    // Kind-Scanprozesse (--scan) laufen parallel zur Haupt-Instanz und dürfen nicht
+    // von der Single-Instance-Logik weggefangen werden.
+    bool moreThanOneInstanceAllowed() override
+    {
+        return juce::JUCEApplicationBase::getCommandLineParameters().contains ("--scan");
+    }
+
+    // Kindmodus: genau EIN VST3 scannen und die Beschreibungen als XML in die --out-Datei
+    // schreiben. Läuft in einem eigenen Prozess -> Hänger/Crashes können die App nie blockieren.
+    // Rückgabe = Exit-Code (0 nur bei mindestens einem gefundenen Plugin-Typ).
+    static int runScanChildMode()
+    {
+        auto args = juce::JUCEApplicationBase::getCommandLineParameterArray();
+        juce::String pluginPath, outPath;
+        for (int i = 0; i < args.size() - 1; ++i)
+        {
+            if (args[i] == "--scan") pluginPath = args[i + 1].unquoted();
+            if (args[i] == "--out")  outPath    = args[i + 1].unquoted();
+        }
+        if (pluginPath.isEmpty() || outPath.isEmpty()) return 2;
+
+        juce::VST3PluginFormat format;
+        juce::OwnedArray<juce::PluginDescription> types;
+        format.findAllTypesForFile (types, pluginPath);
+        if (types.isEmpty()) return 1;
+
+        juce::XmlElement root ("MicVSTScanResult");
+        for (auto* t : types)
+            root.addChildElement (t->createXml().release());
+        return root.writeTo (juce::File (outPath)) ? 0 : 1;
+    }
 
     void initialise (const juce::String& commandLine) override
     {
+        if (commandLine.contains ("--scan"))
+        {
+            setApplicationReturnValue (runScanChildMode());
+            quit();
+            return;
+        }
+
         auto logFile = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                           .getChildFile ("MicVST").getChildFile ("log.txt");
         logFile.getParentDirectory().createDirectory();

@@ -11,6 +11,7 @@
  // per extern "C" deklarieren.
  extern "C" __declspec (dllimport) unsigned int __stdcall SetErrorMode (unsigned int);
  static constexpr unsigned int kSemFailCriticalErrors = 0x0001; // SEM_FAILCRITICALERRORS
+ static constexpr unsigned int kSemNoGpFaultErrorBox  = 0x0002; // SEM_NOGPFAULTERRORBOX
  static constexpr unsigned int kSemNoOpenFileErrorBox  = 0x8000; // SEM_NOOPENFILEERRORBOX
 #endif
 
@@ -33,9 +34,9 @@ public:
     static int runScanChildMode()
     {
        #if JUCE_WINDOWS
-        // Windows-Loader-Fehlerdialoge ("Ungültiges Bild", 0xC0000020) unterdrücken:
+        // Windows-Loader-Fehlerdialoge ("Ungültiges Bild", 0xC0000020) und Crash-Dialoge unterdrücken:
         // eine kaputte Plugin-DLL soll still als Fehler enden, nicht als Modal-Dialog.
-        SetErrorMode (kSemFailCriticalErrors | kSemNoOpenFileErrorBox);
+        SetErrorMode (kSemFailCriticalErrors | kSemNoGpFaultErrorBox | kSemNoOpenFileErrorBox);
        #endif
 
         auto args = juce::JUCEApplicationBase::getCommandLineParameterArray();

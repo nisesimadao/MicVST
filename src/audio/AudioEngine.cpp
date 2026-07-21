@@ -188,6 +188,9 @@ void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
 {
     scanner = nullptr;   // Callback kommt via callAsync -> wir sind auf dem Message-Thread
 
+    // Ordner können während des Scans entfernt worden sein -> Fremdes vor dem Übernehmen wegputzen.
+    pruneOutsideFolders();
+
     for (auto& d : outcome.found)
         knownPlugins.addType (d);
     for (auto& s : outcome.skipped)

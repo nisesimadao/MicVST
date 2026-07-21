@@ -4,7 +4,7 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.3] - 2026-07-21
 
 ### Changed
 - Window and tray icon now appear immediately; the VST3 scan runs in the background with
@@ -66,6 +66,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
+[1.0.3]: https://github.com/philipz794/MicVST/releases/tag/v1.0.3
 [1.0.2]: https://github.com/philipz794/MicVST/releases/tag/v1.0.2
 [1.0.1]: https://github.com/philipz794/MicVST/releases/tag/v1.0.1
 [1.0.0]: https://github.com/philipz794/MicVST/releases/tag/v1.0.0

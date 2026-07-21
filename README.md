@@ -24,7 +24,9 @@ Grab the latest portable build - **no installer, no dependencies**, just run the
 
 **[Download MicVST.exe](https://github.com/philipz794/MicVST/releases/latest/download/MicVST.exe)**
 
-(Statically linked, x64. No Visual C++ Redistributable required.)
+(Statically linked, x64. No Visual C++ Redistributable required. Tested on **Windows 11**;
+Windows 10 x64 should work as well - it uses no Windows-11-specific APIs - but is untested.
+Feedback welcome!)
 
 The `.exe` is **not code-signed**, so Windows SmartScreen may warn *“Windows protected your
 PC”* - click **More info → Run anyway**. Each release lists the file’s **SHA-256** so you can
@@ -74,9 +76,10 @@ boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed
 
 ## Build from source
 
-Requires **Windows 11 x64** and **Visual Studio 2022** with the *Desktop development with C++*
-workload (MSVC + Windows SDK + CMake). JUCE is fetched automatically via CMake `FetchContent`
-(JUCE 8.0.13) - nothing else to install.
+Requires **Windows x64** (tested on Windows 11; Windows 10 should work but is untested) and
+**Visual Studio 2022** with the *Desktop development with C++* workload (MSVC + Windows SDK +
+CMake). JUCE is fetched automatically via CMake `FetchContent` (JUCE 8.0.13) - nothing else to
+install.
 
 ```powershell
 $cmake = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
@@ -93,7 +96,7 @@ $cmake = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\Co
 ```
 
 The build uses the static MSVC runtime (`/MT`), so the resulting `.exe` runs on any Windows 11 x64
-machine without the Visual C++ Redistributable.
+machine without the Visual C++ Redistributable (Windows 10 x64 should work too, but is untested).
 
 ## How it works
 

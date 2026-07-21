@@ -14,9 +14,9 @@ Open an [issue](https://github.com/philipz794/MicVST/issues). For bugs, please i
 
 ## Building
 
-Requires **Windows 11 x64** and **Visual Studio 2022** with the *Desktop development with C++*
-workload (MSVC + Windows SDK + CMake). JUCE is fetched automatically via CMake `FetchContent` -
-nothing else to install.
+Requires **Windows x64** (tested on Windows 11; Windows 10 should work but is untested) and
+**Visual Studio 2022** with the *Desktop development with C++* workload (MSVC + Windows SDK +
+CMake). JUCE is fetched automatically via CMake `FetchContent` - nothing else to install.
 
 ```powershell
 # Configure (fetches JUCE)

@@ -5,6 +5,15 @@
 #include "ui/MainComponent.h"
 #include "ui/TrayIcon.h"
 
+#if JUCE_WINDOWS
+ // Bewusst kein <windows.h>: das Header pollutet nachfolgende JUCE-Header (Makrokonflikte
+ // z.B. in juce_PushNotifications.h). Stattdessen nur die eine benötigte WinAPI-Funktion
+ // per extern "C" deklarieren.
+ extern "C" __declspec (dllimport) unsigned int __stdcall SetErrorMode (unsigned int);
+ static constexpr unsigned int kSemFailCriticalErrors = 0x0001; // SEM_FAILCRITICALERRORS
+ static constexpr unsigned int kSemNoOpenFileErrorBox  = 0x8000; // SEM_NOOPENFILEERRORBOX
+#endif
+
 class MicVSTApplication : public juce::JUCEApplication
 {
 public:
@@ -23,6 +32,12 @@ public:
     // Rückgabe = Exit-Code (0 nur bei mindestens einem gefundenen Plugin-Typ).
     static int runScanChildMode()
     {
+       #if JUCE_WINDOWS
+        // Windows-Loader-Fehlerdialoge ("Ungültiges Bild", 0xC0000020) unterdrücken:
+        // eine kaputte Plugin-DLL soll still als Fehler enden, nicht als Modal-Dialog.
+        SetErrorMode (kSemFailCriticalErrors | kSemNoOpenFileErrorBox);
+       #endif
+
         auto args = juce::JUCEApplicationBase::getCommandLineParameterArray();
         juce::String pluginPath, outPath;
         for (int i = 0; i < args.size() - 1; ++i)

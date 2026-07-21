@@ -26,6 +26,7 @@ FetchContent_MakeAvailable(JUCE)
 add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
     src/audio/GraphConnections.cpp
+    src/audio/ScanCoordinator.cpp
     src/state/Persistence.cpp
     src/state/PluginScanCache.cpp
 )

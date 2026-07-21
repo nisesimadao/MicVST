@@ -27,6 +27,7 @@ add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
     src/audio/GraphConnections.cpp
     src/state/Persistence.cpp
+    src/state/PluginScanCache.cpp
 )
 target_compile_features(MicVSTCore PUBLIC cxx_std_17)
 target_include_directories(MicVSTCore PUBLIC src)
@@ -85,12 +86,14 @@ target_link_libraries(MicVST PRIVATE
 juce_add_console_app(MicVSTTests PRODUCT_NAME "MicVSTTests")
 target_sources(MicVSTTests PRIVATE
     tests/TestMain.cpp
+    tests/ScanTests.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE
     JUCE_PLUGINHOST_VST3=1
 )
 target_link_libraries(MicVSTTests PRIVATE
     MicVSTCore
+    juce::juce_audio_processors
     juce::juce_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

@@ -100,12 +100,13 @@ namespace
                                                   "--out", outFile.getFullPathName() }, 0))
                 return { ScanProcessResult::Status::failed, {} };
 
-            const auto deadline = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
+            // Überlauf-sichere Deadline (getMillisecondCounter wraps nach ~49.7 Tagen)
+            const auto startMs = juce::Time::getMillisecondCounter();
             while (proc.isRunning())
             {
                 if (shouldAbort()) { proc.kill(); outFile.deleteFile();
                                      return { ScanProcessResult::Status::aborted, {} }; }
-                if (juce::Time::getMillisecondCounter() >= deadline)
+                if (juce::Time::getMillisecondCounter() - startMs >= (juce::uint32) timeoutMs)
                 {   proc.kill(); outFile.deleteFile();
                     return { ScanProcessResult::Status::timeout, {} }; }
                 juce::Thread::sleep (100);

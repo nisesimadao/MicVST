@@ -13,6 +13,7 @@ class PluginListView : public juce::Component, private juce::Timer
 {
 public:
     explicit PluginListView (AudioEngine& engine);
+    ~PluginListView() override;
     void resized() override;
 
 private:
@@ -73,7 +74,6 @@ private:
     double scanProgress = 0.0;           // 0..1, von ProgressBar per Referenz gelesen
     juce::ProgressBar scanBar { scanProgress };
     juce::Label skipLabel;               // "N plugin(s) skipped - hover for details"
-    juce::TooltipWindow tooltipWindow { this };
 
     AudioEngine& engine;
     juce::TextButton addBtn { "+ Plugin" };

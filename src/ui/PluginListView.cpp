@@ -178,6 +178,13 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     startTimer (500);   // Plugin-Latenz live halten (z. B. wenn ein Plugin Lookahead an-/abschaltet)
 }
 
+// Engine-Callbacks lösen: eine zerstörte View darf nie mehr zurückgerufen werden.
+PluginListView::~PluginListView()
+{
+    engine.onScanProgress = nullptr;
+    engine.onScanFinished = nullptr;
+}
+
 void PluginListView::timerCallback()
 {
     for (auto* r : rows)

@@ -5,6 +5,7 @@
 #include "audio/Metering.h"
 #include "audio/PluginChain.h"
 #include "audio/MicVSTDeviceManager.h"
+#include "audio/ScanCoordinator.h"
 #include "state/Persistence.h"
 
 // Besitzt AudioDeviceManager + AudioProcessorGraph. Der Graph läuft über einen
@@ -42,12 +43,21 @@ public:
     juce::AudioPluginFormatManager& getFormatManager() { return formatManager; }
     juce::KnownPluginList&          getKnownPlugins()  { return knownPlugins; }
 
-    // VST3-Scan: Standardordner + zusätzliche Custom-Ordner. add/remove rescannen jeweils.
-    void scanPlugins();   // baut die KnownPluginList komplett neu auf
+    // --- Plugin-Scan (out-of-process, asynchron, gecacht) ---
+    void loadPluginCache();                    // beim Start VOR applyState aufrufen
+    void startBackgroundScan();                // scannt nur neue/geänderte Dateien
+    void rescanAllPlugins();                   // Cache + Skip-Liste leeren, alles neu
+    bool isScanning() const { return scanner != nullptr; }
+    const juce::Array<SkippedPlugin>& getSkippedPlugins() const { return skippedPlugins; }
+    std::function<void (int, int, juce::String)> onScanProgress;   // current(1-based), total, name
+    std::function<void()> onScanFinished;      // nach Cache-Save + ggf. Ketten-Restore
+
     void addPluginFolder (const juce::String& folder);
     void removePluginFolder (const juce::String& folder);
     void setPluginFolders (const juce::StringArray& f) { pluginFolders = f; }
     const juce::StringArray& getPluginFolders() const  { return pluginFolders; }
+
+    static juce::File pluginCacheFile();
 
     LevelReading inputLevel()  const { return inputMeter.read(); }
     LevelReading outputLevel() const { return outputMeter.read(); }
@@ -98,4 +108,12 @@ private:
     juce::KnownPluginList knownPlugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner (persistiert)
     LevelMeter inputMeter, outputMeter;
+
+    std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
+    juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
+    juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
+    juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
+    void restoreChain (const juce::Array<PluginEntryState>& plugins);
+    void handleScanFinished (const ScanOutcome&);
+    void pruneOutsideFolders();                    // Cache-Einträge entfernter Ordner löschen
 };

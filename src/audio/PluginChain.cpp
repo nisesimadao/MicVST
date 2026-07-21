@@ -88,35 +88,14 @@ namespace
 PluginChain::PluginChain (juce::AudioProcessorGraph& g, NodeID in, NodeID out)
     : graph (g), inputNode (in), outputNode (out) {}
 
-void PluginChain::scan (juce::AudioPluginFormatManager& fm,
-                        juce::KnownPluginList& list,
-                        const juce::StringArray& extraFolders)
-{
-    if (fm.getNumFormats() == 0)
-        juce::addDefaultFormatsToManager (fm);   // JUCE 8.0.13: addDefaultFormats() ist =delete
-
-    juce::VST3PluginFormat vst3;
-    juce::FileSearchPath paths;
-    paths.add (juce::File ("C:/Program Files/Common Files/VST3"));
-    for (auto& f : extraFolders)
-        if (f.isNotEmpty()) paths.add (juce::File (f));
-
-    // "Dead man's pedal": Das gerade gescannte Plugin wird hier vermerkt. Crasht der Scan,
-    // ist dieses Plugin beim nächsten Start bekannt und wird übersprungen -> ein einzelnes
-    // kaputtes VST3 legt MicVST nicht dauerhaft lahm.
-    auto deadMansPedal = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                            .getChildFile ("MicVST").getChildFile ("plugin_scan.tmp");
-
-    juce::PluginDirectoryScanner scanner (list, vst3, paths, true, deadMansPedal, false);
-    juce::String name;
-    while (scanner.scanNextFile (true, name)) {}
-}
-
 bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
                              const juce::PluginDescription& desc,
                              double sampleRate, int blockSize,
                              juce::String& errorOut)
 {
+    if (fm.getNumFormats() == 0)
+        juce::addDefaultFormatsToManager (fm);   // JUCE 8.0.13: addDefaultFormats() ist =delete
+
     auto instance = fm.createPluginInstance (desc, sampleRate, blockSize, errorOut);
     if (instance == nullptr) return false;
 

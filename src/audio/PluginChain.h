@@ -19,10 +19,6 @@ public:
     PluginChain (juce::AudioProcessorGraph& graph,
                  NodeID inputNode, NodeID outputNode);
 
-    static void scan (juce::AudioPluginFormatManager& fm,
-                      juce::KnownPluginList& list,
-                      const juce::StringArray& extraFolders);
-
     // Lädt ein VST3 (synchron) und hängt es ans Ende der Kette. Gibt false bei Fehler.
     bool addPlugin (juce::AudioPluginFormatManager& fm,
                     const juce::PluginDescription& desc,

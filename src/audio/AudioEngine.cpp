@@ -138,23 +138,112 @@ void AudioEngine::rebuildGraph()
         pluginChain->rebuildConnections();
 }
 
-void AudioEngine::scanPlugins()
+juce::File AudioEngine::pluginCacheFile()
 {
-    knownPlugins.clear();   // autoritativ aus Standardordner + aktuellen Custom-Ordnern neu aufbauen
-    PluginChain::scan (formatManager, knownPlugins, pluginFolders);
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+              .getChildFile ("MicVST").getChildFile ("plugin_cache.xml");
+}
+
+juce::StringArray AudioEngine::listVst3Files() const
+{
+    juce::VST3PluginFormat vst3;
+    juce::FileSearchPath paths;
+    paths.add (juce::File ("C:/Program Files/Common Files/VST3"));
+    for (auto& f : pluginFolders)
+        if (f.isNotEmpty()) paths.add (juce::File (f));
+    paths.removeRedundantPaths();
+    return vst3.searchPathsForPlugins (paths, true, true);
+}
+
+void AudioEngine::loadPluginCache()
+{
+    if (! PluginScanCache::load (pluginCacheFile(), knownPlugins, skippedPlugins))
+        juce::Logger::writeToLog ("Plugin-Cache fehlt/korrupt -> voller Scan");
+}
+
+void AudioEngine::startBackgroundScan()
+{
+    if (isScanning()) return;
+
+    juce::VST3PluginFormat vst3;
+    auto files = filterFilesNeedingScan (listVst3Files(), knownPlugins, vst3, skippedPlugins);
+    juce::Logger::writeToLog ("Scan: " + juce::String (files.size()) + " Datei(en) zu scannen");
+    if (files.isEmpty())
+    {
+        PluginScanCache::save (pluginCacheFile(), knownPlugins, skippedPlugins);
+        if (! pendingPlugins.isEmpty()) { restoreChain (pendingPlugins); pendingPlugins.clear(); }
+        if (onScanFinished) onScanFinished();
+        return;
+    }
+
+    scanner = std::make_unique<ScanCoordinator> (files,
+        [this] (int cur, int total, juce::String name)
+        {
+            if (onScanProgress) onScanProgress (cur, total, name);
+        },
+        [this] (ScanOutcome outcome) { handleScanFinished (outcome); });
+}
+
+void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
+{
+    scanner = nullptr;   // Callback kommt via callAsync -> wir sind auf dem Message-Thread
+
+    for (auto& d : outcome.found)
+        knownPlugins.addType (d);
+    for (auto& s : outcome.skipped)
+    {
+        skippedPlugins.add (s);
+        juce::Logger::writeToLog ("Scan übersprungen (" + s.reason + "): " + s.file);
+    }
+
+    PluginScanCache::save (pluginCacheFile(), knownPlugins, skippedPlugins);
+
+    if (! pendingPlugins.isEmpty())
+    {
+        restoreChain (pendingPlugins);
+        pendingPlugins.clear();
+    }
+    if (onScanFinished) onScanFinished();
+}
+
+void AudioEngine::rescanAllPlugins()
+{
+    if (isScanning()) return;
+    knownPlugins.clear();
+    skippedPlugins.clear();
+    pluginCacheFile().deleteFile();
+    startBackgroundScan();
+}
+
+void AudioEngine::pruneOutsideFolders()
+{
+    auto inScope = [this] (const juce::String& path)
+    {
+        if (path.startsWithIgnoreCase ("C:\\Program Files\\Common Files\\VST3")
+            || path.startsWithIgnoreCase ("C:/Program Files/Common Files/VST3")) return true;
+        for (auto& f : pluginFolders)
+            if (f.isNotEmpty() && path.startsWithIgnoreCase (f)) return true;
+        return false;
+    };
+    for (auto& t : knownPlugins.getTypes())
+        if (! inScope (t.fileOrIdentifier)) knownPlugins.removeType (t);
+    for (int i = skippedPlugins.size(); --i >= 0;)
+        if (! inScope (skippedPlugins[i].file)) skippedPlugins.remove (i);
 }
 
 void AudioEngine::addPluginFolder (const juce::String& folder)
 {
     if (folder.isNotEmpty() && ! pluginFolders.contains (folder))
         pluginFolders.add (folder);
-    scanPlugins();
+    startBackgroundScan();
 }
 
 void AudioEngine::removePluginFolder (const juce::String& folder)
 {
     pluginFolders.removeString (folder);
-    scanPlugins();
+    pruneOutsideFolders();
+    PluginScanCache::save (pluginCacheFile(), knownPlugins, skippedPlugins);
+    startBackgroundScan();
 }
 
 MicVSTState AudioEngine::captureState()
@@ -167,6 +256,10 @@ MicVSTState AudioEngine::captureState()
     s.sampleRate   = setup.sampleRate;
     s.bufferSize   = setup.bufferSize > 0 ? setup.bufferSize : 128;
     s.pluginFolders = pluginFolders;
+
+    // Ketten-Restore steht noch aus -> gemerkten Zustand verbatim zurückgeben,
+    // sonst würde persistState() die gespeicherte Kette mit "leer" überschreiben.
+    if (! pendingPlugins.isEmpty()) { s.plugins = pendingPlugins; return s; }
     if (pluginChain == nullptr) return s;
 
     for (auto& e : pluginChain->entries())
@@ -189,12 +282,27 @@ void AudioEngine::applyState (const MicVSTState& s)
 {
     initialise (s.inputDevice, s.outputDevice);
 
+    // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.
+    // Sonst bis Scan-Ende zurückstellen (captureState liefert solange pendingPlugins,
+    // damit persistState die Kette nicht mit "leer" überschreibt).
+    bool allResolvable = true;
+    for (auto& p : s.plugins)
+        if (! p.fileOrId.startsWith ("builtin:") && knownPlugins.getTypeForFile (p.fileOrId) == nullptr)
+            { allResolvable = false; break; }
+
+    if (allResolvable) restoreChain (s.plugins);
+    else               { pendingPlugins = s.plugins;
+                         juce::Logger::writeToLog ("Ketten-Restore wartet auf Plugin-Scan"); }
+    rebuildGraph();
+}
+
+void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
+{
     double sr = deviceManager.getCurrentAudioDevice() != nullptr
               ? deviceManager.getCurrentAudioDevice()->getCurrentSampleRate() : 48000.0;
 
-    for (auto& p : s.plugins)
+    for (auto& p : plugins)
     {
-        // Interne Glieder wiederherstellen.
         if (p.fileOrId == PluginChain::monoToStereoId || p.fileOrId == PluginChain::stereoToMonoId)
         {
             if (p.fileOrId == PluginChain::monoToStereoId) pluginChain->addMonoToStereo();

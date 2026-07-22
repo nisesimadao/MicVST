@@ -42,7 +42,9 @@ recommended - MicVST detects it automatically. VoiceMeeter and Virtual Audio Cab
    virtual cable (e.g. *CABLE Input*) as output. Both are changeable in the audio setup and are
    remembered across restarts.
 3. **Build your plugin chain** (bottom list, “+ Plugin”):
-   - add any VST3 effects you like (e.g. a noise-suppressor, EQ, compressor),
+   - “+ Plugin” opens a **searchable list** (grouped by manufacturer when empty) including all found
+     VST3 effects and built-in nodes (Mono → Stereo, Stereo → Mono); add any effects you like
+     (e.g. a noise-suppressor, EQ, compressor). Built-ins are included.
    - optionally insert the built-in **Mono → Stereo** node at the point where you want stereo
      (before it the chain runs mono = less CPU),
    - drag rows by the **handle on the left** to reorder; the **trash icon on the right** removes a
@@ -66,11 +68,13 @@ boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed
 - Horizontal **in/out level meters** with a dB scale
 - **Drag-to-reorder** plugin list, per-row bypass, remove with confirmation, per-plugin editor
   windows
-- Scans the standard VST3 folder; **add custom VST3 folders** via “Manage VST3 Folders → Add
-  folder...” Scanning runs **in the background** (window opens instantly) in isolated helper
-  processes - a plugin that crashes or hangs the scan is skipped automatically and listed as
-  skipped; results are cached, so later starts are instant. “Rescan all plugins” (in the
-  “+ Plugin” and “Manage VST3 Folders” menus) starts fresh.
+- Scans all standard VST3 locations (Program Files, %LOCALAPPDATA%, VST3_PATH); **add custom
+  VST3 folders** via “Manage VST3 Folders → Add folder...” Scanning runs **in the background**
+  (window opens instantly) in isolated helper processes with a 60-second timeout - a plugin that
+  crashes or hangs the scan is skipped (with a hint in the UI); you can skip the current plugin
+  mid-scan or “Retry skipped plugins” (with a generous 10-minute timeout) for huge shell plugins
+  like Waves WaveShell. Results are cached, so later starts are instant. “Rescan all plugins”
+  (in the “Manage VST3 Folders” menu) starts fresh.
 - Persistent settings (`%APPDATA%\MicVST\config.xml`), low latency, silent **tray autostart**
 - Optional, **opt-in update check** (off by default): one request to the GitHub releases API on
   startup; no telemetry, no auto-installer
@@ -116,7 +120,7 @@ MicVST adds only the **smallest buffer necessary** to run your VST3 chain - typi
 
 A few things worth knowing:
 
-- **The buffer size is a single fixed value** (e.g. 480) because MicVST uses **WASAPI shared mode** - the same low-overhead path Windows uses for everything else. Windows sets one engine period for shared audio, so there's nothing to tune there, and nothing is being wasted. MicVST simply shows it (with the live end-to-end latency) under the device list.
+- **Buffer size** is **shared mode** - Windows sets one engine period (typically 480 samples at 48 kHz = ~10 ms) and MicVST uses it directly. When your selected devices support multiple buffer sizes, a "Buffer" dropdown appears in the device panel ("Auto" = device default); otherwise it's fixed. MicVST shows the buffer and live end-to-end latency under the device list.
 - **Total latency you hear is mostly downstream of MicVST.** The signal path is `Mic → MicVST → virtual cable → your app (Discord/OBS/…)`. The virtual cable and the receiving app each read through Windows shared audio too, and the cable has its own buffering. If you want to trim the cable's part, VB-Cable exposes a latency / internal-sample-rate setting in its own control panel (`VBCABLE_ControlPanel.exe`).
 - **For talking into Discord/OBS/Zoom, latency is inaudible** - your microphone signal travels one way to your listeners, so a few milliseconds never matter. (Low buffer sizes only matter when you monitor *yourself* live or play an instrument in real time, which isn't what MicVST is for.)
 - **ASIO / ASIO4All won't help here.** ASIO is built for a single exclusive in-and-out device and doesn't fit a mic-in / virtual-cable-out setup - and the receiving app would still read through shared audio anyway. MicVST is already on the most direct path Windows offers for this job.

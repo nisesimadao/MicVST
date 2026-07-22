@@ -4,6 +4,29 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-07-22
+
+### Added
+- Searchable plugin picker: "+ Plugin" now opens a search box with live filtering
+  (grouped by manufacturer when the search is empty). Built-ins are included.
+- "Skip" button while scanning: skip the plugin that is currently being scanned.
+- "Retry skipped plugins" (Manage VST3 Folders menu): rescans skipped plugins with a
+  generous 10-minute timeout - lets huge shell plugins like Waves WaveShell finish.
+- Buffer size dropdown (low-latency mode): when the selected devices support multiple
+  buffer sizes, a "Buffer" row appears in the device panel ("Auto" = device default).
+
+### Changed
+- Scan timeout raised from 30 s to 60 s.
+- All standard VST3 locations are scanned (Program Files, %LOCALAPPDATA%, VST3_PATH).
+- Audio devices now open in WASAPI low-latency mode when available (shared as fallback).
+
+### Fixed
+- Plugins that write into their own bundle during load (UAD, Acustica, ...) were
+  rescanned on every start; their cache timestamp is now taken after the scan finishes.
+- Plugin updates that change the internal plugin ID no longer cause endless rescans.
+- Removing a custom folder like "C:\Plugins" no longer prunes plugins from sibling
+  folders like "C:\Plugins2".
+
 ## [1.0.3] - 2026-07-21
 
 ### Changed
@@ -66,6 +89,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
+[1.1.0]: https://github.com/philipz794/MicVST/releases/tag/v1.1.0
 [1.0.3]: https://github.com/philipz794/MicVST/releases/tag/v1.0.3
 [1.0.2]: https://github.com/philipz794/MicVST/releases/tag/v1.0.2
 [1.0.1]: https://github.com/philipz794/MicVST/releases/tag/v1.0.1

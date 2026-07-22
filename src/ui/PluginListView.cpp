@@ -247,7 +247,7 @@ void PluginListView::rebuildRows()
 void PluginListView::commitChange()
 {
     engine.rebuildGraph();
-    saveState (engine.captureState());
+    engine.requestPersist();   // App persistiert den Gesamtzustand (nicht nur captureState)
     rebuildRows();
 }
 
@@ -392,7 +392,7 @@ void PluginListView::showFolderMenu()
                 if (juce::isPositiveAndBelow (idx, f.size()))
                 {
                     engine.removePluginFolder (f[idx]);
-                    saveState (engine.captureState());
+                    engine.requestPersist();
                 }
             }
         });
@@ -408,7 +408,7 @@ void PluginListView::chooseFolder()
             const auto dir = fc.getResult();
             if (! dir.isDirectory()) return;
             engine.addPluginFolder (dir.getFullPathName());   // hinzufügen + rescan
-            saveState (engine.captureState());                // Ordner persistieren
+            engine.requestPersist();                          // Ordner persistieren
         });
 }
 

@@ -133,6 +133,9 @@ public:
         // Erst JETZT (nach applyState) das Persistieren bei Geräte-Änderungen aktivieren,
         // damit In-/Output-Auswahl gemerkt wird — auch ohne sauberes Beenden (X versteckt nur).
         engine->onDeviceChanged = [this] { persistState(); };
+        // UI-Änderungen (Plugin-Kette, Ordner) persistieren ebenfalls den Gesamtzustand —
+        // ein direktes saveState(captureState()) in der UI würde windowState/Update-Check resetten.
+        engine->onStateChanged  = [this] { persistState(); };
 
         // --- Auto-Update-Check verdrahten ---
         if (auto* mc = mainWindow->getContent())

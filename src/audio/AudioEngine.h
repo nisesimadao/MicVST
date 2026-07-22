@@ -42,6 +42,12 @@ public:
     std::function<void()> onStatusChanged;  // wird bei Device-Änderungen aufgerufen (UI-Status)
     std::function<void()> onDeviceChanged;  // wird bei Geräte-Änderungen aufgerufen (zum Persistieren)
 
+    // Von der UI bei Ketten-/Ordner-Änderungen gerufen. Die App persistiert dann den
+    // GESAMTEN Zustand (inkl. windowState + Update-Check-Feldern, die captureState nicht
+    // kennt) — ein direktes saveState(captureState()) würde diese Felder zurücksetzen.
+    std::function<void()> onStateChanged;
+    void requestPersist() { if (onStateChanged) onStateChanged(); }
+
     MicVSTDeviceManager&            getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph&      getGraph()         { return graph; }
     PluginChain&                    getChain()         { return *pluginChain; }

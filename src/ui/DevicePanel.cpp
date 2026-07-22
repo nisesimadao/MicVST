@@ -14,6 +14,13 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     addAndMakeVisible (inInfo);
     addAndMakeVisible (outInfo);
 
+    bufInfo.setTooltip ("Buffer size in samples. Smaller = lower latency, higher CPU risk. "
+                        "\"Auto\" uses the device default. Only shown when the devices "
+                        "support multiple sizes (low-latency mode).");
+    addChildComponent (bufLabel); addChildComponent (bufBox); addChildComponent (bufInfo);
+    bufLabel.setJustificationType (juce::Justification::centredLeft);
+    bufBox.onChange = [this] { apply(); };
+
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     statusLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
@@ -68,6 +75,28 @@ void DevicePanel::refresh()
                               juce::dontSendNotification);
     }
 
+    // Buffer-Zeile: nur wenn das aktuelle Gerät mehrere Größen anbietet (Low-Latency-Modus).
+    bufBox.clear (juce::dontSendNotification);
+    auto* dev = dm.getCurrentAudioDevice();
+    const auto sizes = dev != nullptr ? dev->getAvailableBufferSizes() : juce::Array<int>();
+    const bool showBuf = sizes.size() > 1;
+    if (showBuf)
+    {
+        const double sr = dev->getCurrentSampleRate();
+        bufBox.addItem ("Auto (default)", 1);
+        for (int i = 0; i < sizes.size(); ++i)
+            bufBox.addItem (juce::String (sizes[i]) + " samples ("
+                                + juce::String (sizes[i] / sr * 1000.0, 1) + " ms)", i + 2);
+        const int pref = engine.getPreferredBufferSize();
+        const int idx = sizes.indexOf (pref);
+        bufBox.setSelectedId (pref > 0 && idx >= 0 ? idx + 2 : 1, juce::dontSendNotification);
+    }
+    if (showBuf != bufBox.isVisible())
+    {
+        bufLabel.setVisible (showBuf); bufBox.setVisible (showBuf); bufInfo.setVisible (showBuf);
+        if (auto* p = getParentComponent()) p->resized();   // MainComponent-Layout nachziehen
+    }
+
     updateStatus();
 
     updating = false;
@@ -114,8 +143,20 @@ void DevicePanel::apply()
     const int oid = outBox.getSelectedId();
     if (oid >= 2 && juce::isPositiveAndBelow (oid - 2, outs.size())) output = outs[oid - 2];
 
-    // Samplerate/Buffer bleiben unverändert (0/0): im Shared-Modus gibt Windows sie vor.
-    engine.setDeviceConfig (input, output, 0.0, 0);
+    // Buffer-Wunsch: id 1 = Auto (0). Bei Auto den Geräte-Default explizit setzen,
+    // weil setDeviceConfig 0 als "unverändert" interpretiert (sonst kein Zurückstellen).
+    int buf = 0;
+    if (bufBox.isVisible() && bufBox.getSelectedId() >= 2)
+    {
+        auto* dev = dm.getCurrentAudioDevice();
+        const auto sizes = dev != nullptr ? dev->getAvailableBufferSizes() : juce::Array<int>();
+        const int idx = bufBox.getSelectedId() - 2;
+        if (juce::isPositiveAndBelow (idx, sizes.size())) buf = sizes[idx];
+    }
+    engine.setPreferredBufferSize (buf);
+    auto* curDev = dm.getCurrentAudioDevice();
+    const int effective = buf > 0 ? buf : (curDev != nullptr ? curDev->getDefaultBufferSize() : 0);
+    engine.setDeviceConfig (input, output, 0.0, effective);
 }
 
 void DevicePanel::resized()
@@ -144,5 +185,17 @@ void DevicePanel::resized()
     auto outRow = row();
     outBox.setBounds (labelWithInfo (outRow, outLabel, outInfo));
 
+    if (bufBox.isVisible())
+    {
+        auto bufRow = row();
+        bufBox.setBounds (labelWithInfo (bufRow, bufLabel, bufInfo));
+    }
+
     statusLabel.setBounds (row());   // dauerhafte Info-Zeile unter den Geräten
+}
+
+int DevicePanel::preferredHeight() const
+{
+    // 3 Zeilen à 26 + 2 Lücken à 4 = 86; Buffer-Zeile sichtbar -> 4 Zeilen + 3 Lücken = 116.
+    return bufBox.isVisible() ? 116 : 86;
 }

@@ -3,7 +3,7 @@
 namespace ids
 {
     const juce::Identifier root ("MicVST"), inDev ("inputDevice"), outDev ("outputDevice"),
-        sr ("sampleRate"), buf ("bufferSize"), folders ("pluginFolders"), window ("windowState"),
+        sr ("sampleRate"), userBuf ("userBufferSize"), folders ("pluginFolders"), window ("windowState"),
         updEnabled ("updateCheckEnabled"), updAsked ("updateCheckAsked"), updLast ("lastNotifiedVersion"),
         plugins ("plugins"), plugin ("plugin"), fileId ("fileOrId"), byp ("bypassed"), blob ("state");
 }
@@ -14,7 +14,7 @@ juce::ValueTree toValueTree (const MicVSTState& s)
     t.setProperty (ids::inDev, s.inputDevice, nullptr);
     t.setProperty (ids::outDev, s.outputDevice, nullptr);
     t.setProperty (ids::sr, s.sampleRate, nullptr);
-    t.setProperty (ids::buf, s.bufferSize, nullptr);
+    t.setProperty (ids::userBuf, s.bufferSize, nullptr);
     t.setProperty (ids::folders, s.pluginFolders.joinIntoString ("\n"), nullptr);
     t.setProperty (ids::window, s.windowState, nullptr);
     t.setProperty (ids::updEnabled, s.updateCheckEnabled, nullptr);
@@ -40,7 +40,9 @@ MicVSTState fromValueTree (const juce::ValueTree& t)
     s.inputDevice  = t.getProperty (ids::inDev);
     s.outputDevice = t.getProperty (ids::outDev);
     s.sampleRate   = t.getProperty (ids::sr, 48000.0);
-    s.bufferSize   = t.getProperty (ids::buf, 128);
+    // Migration v1.0.x: der alte Key "bufferSize" (immer 128) wird bewusst ignoriert --
+    // im Shared-Modus war er nie wirksam. Bestandsnutzer starten mit Auto.
+    s.bufferSize   = t.getProperty (ids::userBuf, 0);
     {
         const auto f = t.getProperty (ids::folders).toString();
         if (f.isNotEmpty()) { s.pluginFolders.addLines (f); s.pluginFolders.removeEmptyStrings(); }

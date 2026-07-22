@@ -44,7 +44,7 @@ juce::String AudioEngine::detectCableOutput()
         "Virtual Audio Cable"   // VAC ("Line 1 (Virtual Audio Cable)")
     };
 
-    deviceManager.setCurrentAudioDeviceType ("Windows Audio", true);
+    deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
     {
         type->scanForDevices();
@@ -62,7 +62,7 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
 {
     deviceManager.removeAudioCallback (this);   // idempotent: doppelte Registrierung vermeiden
     deviceManager.closeAudioDevice();
-    deviceManager.setCurrentAudioDeviceType ("Windows Audio", true);
+    deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
 
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     deviceManager.getAudioDeviceSetup (setup);
@@ -72,7 +72,8 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
     // ließe sich nicht speichern.
     setup.inputDeviceName  = inputDeviceName;
     setup.outputDeviceName = outputDeviceName;
-    setup.bufferSize = 128;
+    if (preferredBufferSize > 0)
+        setup.bufferSize = preferredBufferSize;   // 0 = Auto: Geräte-Default nicht anfassen
     // Kanäle EXPLIZIT aktivieren. Auf useDefault* darf man sich nicht verlassen:
     // ohne deviceManager.initialise(numIn,numOut,...) ist numInputChansNeeded=0,
     // wodurch die "Default"-Input-Kanäle auf [0,0) = KEINE gesetzt würden.
@@ -277,7 +278,7 @@ MicVSTState AudioEngine::captureState()
     s.inputDevice  = setup.inputDeviceName;
     s.outputDevice = setup.outputDeviceName;
     s.sampleRate   = setup.sampleRate;
-    s.bufferSize   = setup.bufferSize > 0 ? setup.bufferSize : 128;
+    s.bufferSize   = preferredBufferSize;
     s.pluginFolders = pluginFolders;
 
     // Ketten-Restore steht noch aus -> gemerkten Zustand verbatim zurückgeben,
@@ -303,6 +304,7 @@ MicVSTState AudioEngine::captureState()
 
 void AudioEngine::applyState (const MicVSTState& s)
 {
+    setPreferredBufferSize (s.bufferSize);
     initialise (s.inputDevice, s.outputDevice);
 
     // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.

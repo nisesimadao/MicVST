@@ -19,9 +19,9 @@ struct InfoIcon : juce::Component, juce::SettableTooltipClient
 };
 
 // Kompakte Geräteauswahl: Input zuerst, dann Output (Output kennt "(none)").
-// Darunter eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).
-// Samplerate und Buffergröße sind bewusst REINE Readouts: im WASAPI-Shared-Modus gibt
-// Windows genau eine Mixer-Periode vor, es gibt also nichts einzustellen.
+// Darunter optional eine Buffer-Zeile: nur sichtbar, wenn das Gerätepaar im
+// Low-Latency-Modus mehr als eine Buffer-Größe meldet ("Auto" = Geräte-Default).
+// Zuunterst eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).
 // Bewusst KEIN Input-Pegelmeter (oben gibt es den großen) und keine Kanal-Listen
 // (MicVST verwaltet die Kanäle selbst auf Stereo).
 class DevicePanel : public juce::Component,
@@ -32,6 +32,8 @@ public:
     explicit DevicePanel (AudioEngine&);
     ~DevicePanel() override;
     void resized() override;
+
+    int preferredHeight() const;   // 3 Zeilen, +1 wenn die Buffer-Zeile sichtbar ist
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -44,6 +46,9 @@ private:
     juce::Label    inLabel  { {}, "Input" },  outLabel { {}, "Output" };
     InfoIcon       inInfo, outInfo;
     juce::ComboBox inBox, outBox;
+    juce::Label    bufLabel { {}, "Buffer" };
+    InfoIcon       bufInfo;
+    juce::ComboBox bufBox;
     juce::Label    statusLabel;   // Active / Samplerate / Buffer / Latenz (immer sichtbar)
 
     bool updating = false;        // Re-entrancy-Guard beim Befüllen

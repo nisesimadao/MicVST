@@ -255,10 +255,9 @@ void MainComponent::resized()
         r.removeFromTop (4);
     }
 
-    // DevicePanel feste Höhe (Input + Output + Info-Zeile = 3 Zeilen à 26 + 2 Lücken à 4),
-    // die Plugin-Liste bekommt den ganzen Rest -> mehr Fensterhöhe verlängert die Liste.
-    constexpr int devicePanelH = 86;
-    devicePanel->setBounds (r.removeFromTop (devicePanelH));
+    // DevicePanel meldet seine Höhe selbst (3 Zeilen, +1 wenn die Buffer-Zeile sichtbar
+    // ist); die Plugin-Liste bekommt den ganzen Rest.
+    devicePanel->setBounds (r.removeFromTop (devicePanel->preferredHeight()));
     r.removeFromTop (8);
     pluginList->setBounds (r);
 }

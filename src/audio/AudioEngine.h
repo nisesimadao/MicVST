@@ -26,6 +26,11 @@ public:
     void setDeviceConfig (const juce::String& input, const juce::String& output,
                           double sampleRate, int bufferSize);
 
+    // Buffer-Wunsch des Users in Samples; 0 = Auto (Geräte-Default-Periode).
+    // Wird von applyState gesetzt und in captureState persistiert.
+    void setPreferredBufferSize (int samples) { preferredBufferSize = samples; }
+    int  getPreferredBufferSize() const       { return preferredBufferSize; }
+
     // Sucht ein installiertes virtuelles Audio-Kabel als Output (VB-Cable, VoiceMeeter, VAC),
     // die Render->Capture selbst spiegeln. Leerer String = kein Kabel gefunden.
     juce::String detectCableOutput();
@@ -109,6 +114,7 @@ private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner (persistiert)
+    int preferredBufferSize = 0;   // Buffer-Wunsch des Users in Samples; 0 = Auto
     LevelMeter inputMeter, outputMeter;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft

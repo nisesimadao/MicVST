@@ -1,17 +1,31 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 
-// AudioDeviceManager, der NUR den WASAPI-Shared-Typ registriert.
-// Default-JUCE registriert drei Windows-Audio-Typen (shared, exclusive,
-// sharedLowLatency) -> der AudioDeviceSelectorComponent zeigt dann eine
-// Typ-Auswahl. Wir brauchen nur "Windows Audio" (shared); mit genau einem
-// Typ blendet der Selector die Typ-Zeile aus.
+// AudioDeviceManager mit WASAPI "Low Latency Mode" (IAudioClient3, ab Win 10) als
+// bevorzugtem Typ und klassischem Shared als Fallback. Low Latency meldet pro Gerät
+// echte Buffer-Größen (min..max in Treiber-Schritten) -> Buffer-Dropdown im DevicePanel;
+// Shared meldet genau EINE Größe (Windows-Mixer-Periode), das Dropdown bleibt dann weg.
+// Exclusive bleibt bewusst außen vor (lockt Geräte gegen andere Apps).
 struct MicVSTDeviceManager : juce::AudioDeviceManager
 {
+    static constexpr const char* lowLatencyTypeName = "Windows Audio (Low Latency Mode)";
+    static constexpr const char* sharedTypeName     = "Windows Audio";
+
     void createAudioDeviceTypes (juce::OwnedArray<juce::AudioIODeviceType>& types) override
     {
-        if (auto* wasapi = juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (
+        if (auto* ll = juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (
+                           juce::WASAPIDeviceMode::sharedLowLatency))
+            types.add (ll);
+        if (auto* shared = juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (
                                juce::WASAPIDeviceMode::shared))
-            types.add (wasapi);
+            types.add (shared);
+    }
+
+    juce::String preferredTypeName()
+    {
+        for (auto* t : getAvailableDeviceTypes())
+            if (t->getTypeName() == lowLatencyTypeName)
+                return lowLatencyTypeName;
+        return sharedTypeName;
     }
 };

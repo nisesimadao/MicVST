@@ -90,6 +90,14 @@ void DevicePanel::refresh()
         const int pref = engine.getPreferredBufferSize();
         const int idx = sizes.indexOf (pref);
         bufBox.setSelectedId (pref > 0 && idx >= 0 ? idx + 2 : 1, juce::dontSendNotification);
+
+        // Der gewählte Wert existiert beim aktuellen Gerät nicht mehr (z. B. Gerät
+        // gewechselt) -> Anzeige fällt auf "Auto" zurück, also muss auch der Engine-
+        // Zustand nachziehen, sonst würde captureState() einen nie bestätigten Wert
+        // persistieren. Nur bei sichtbarer Zeile: bei !showBuf bleibt die Wahl erhalten
+        // (z. B. USB-Interface kurz getrennt) -- JUCE klemmt unpassende Größen ohnehin.
+        if (pref > 0 && idx < 0)
+            engine.setPreferredBufferSize (0);
     }
     if (showBuf != bufBox.isVisible())
     {

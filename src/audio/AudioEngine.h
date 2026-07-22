@@ -42,7 +42,7 @@ public:
     std::function<void()> onStatusChanged;  // wird bei Device-Änderungen aufgerufen (UI-Status)
     std::function<void()> onDeviceChanged;  // wird bei Geräte-Änderungen aufgerufen (zum Persistieren)
 
-    juce::AudioDeviceManager&       getDeviceManager() { return deviceManager; }
+    MicVSTDeviceManager&            getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph&      getGraph()         { return graph; }
     PluginChain&                    getChain()         { return *pluginChain; }
     juce::AudioPluginFormatManager& getFormatManager() { return formatManager; }

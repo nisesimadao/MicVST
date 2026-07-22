@@ -29,6 +29,7 @@ add_library(MicVSTCore STATIC
     src/audio/ScanCoordinator.cpp
     src/state/Persistence.cpp
     src/state/PluginScanCache.cpp
+    src/ui/PluginSearch.cpp
 )
 target_compile_features(MicVSTCore PUBLIC cxx_std_17)
 target_include_directories(MicVSTCore PUBLIC src)
@@ -60,6 +61,7 @@ target_sources(MicVST PRIVATE
     src/ui/MainComponent.cpp
     src/ui/DevicePanel.cpp
     src/ui/PluginListView.cpp
+    src/ui/PluginPicker.cpp
     src/ui/LevelMeterComponent.cpp
     src/ui/TrayIcon.cpp
     src/state/AutostartRegistry.cpp
@@ -88,6 +90,7 @@ juce_add_console_app(MicVSTTests PRODUCT_NAME "MicVSTTests")
 target_sources(MicVSTTests PRIVATE
     tests/TestMain.cpp
     tests/ScanTests.cpp
+    tests/PickerTests.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE
     JUCE_PLUGINHOST_VST3=1

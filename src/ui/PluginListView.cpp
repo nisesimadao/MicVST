@@ -1,5 +1,6 @@
 #include "ui/PluginListView.h"
 #include "audio/PluginChain.h"
+#include "ui/PluginPicker.h"
 
 // ============================ TrashButton ============================
 
@@ -143,7 +144,7 @@ void PluginListView::Row::mouseDoubleClick (const juce::MouseEvent& e)
 PluginListView::PluginListView (AudioEngine& e) : engine (e)
 {
     addAndMakeVisible (addBtn);
-    addBtn.onClick = [this] { showAddMenu(); };
+    addBtn.onClick = [this] { showPluginPicker(); };
 
     addAndMakeVisible (manageFoldersBtn);
     manageFoldersBtn.onClick = [this] { showFolderMenu(); };
@@ -297,52 +298,52 @@ void PluginListView::toggleBypass (int index)
     });
 }
 
-void PluginListView::showAddMenu()
+void PluginListView::showPluginPicker()
 {
-    auto& known = engine.getKnownPlugins();
-    constexpr int monoToStereoItemId = 100000;   // außerhalb des Plugin-Index-Bereichs
-    constexpr int stereoToMonoItemId = 100001;
-    constexpr int rescanItemId = 100002;
+    // Built-ins als Pseudo-Descriptions: laufen so durch dieselbe Suche/Gruppierung.
+    juce::Array<juce::PluginDescription> entries;
+    juce::PluginDescription m2s;
+    m2s.name = "Mono -> Stereo"; m2s.manufacturerName = "Built-in";
+    m2s.fileOrIdentifier = PluginChain::monoToStereoId;
+    entries.add (m2s);
+    juce::PluginDescription s2m;
+    s2m.name = "Stereo -> Mono"; s2m.manufacturerName = "Built-in";
+    s2m.fileOrIdentifier = PluginChain::stereoToMonoId;
+    entries.add (s2m);
+    entries.addArray (engine.getKnownPlugins().getTypes());
 
-    juce::PopupMenu m;
-    m.addItem (monoToStereoItemId, "Mono -> Stereo (built-in)");
-    m.addItem (stereoToMonoItemId, "Stereo -> Mono (built-in)");
-    m.addSeparator();
-    m.addItem (rescanItemId, "Rescan all plugins");
-    m.addSeparator();
-    auto types = known.getTypes();
-    for (int i = 0; i < types.size(); ++i)
-        m.addItem (i + 1, types[i].name);
+    // SafePointer: die CallOutBox lebt auf dem Desktop und kann die View überleben.
+    juce::Component::SafePointer<PluginListView> safe (this);
+    auto picker = std::make_unique<PluginPickerComponent> (entries,
+        [safe] (const juce::PluginDescription& d)
+        {
+            if (auto* self = safe.getComponent()) self->addFromPicker (d);
+        });
+    juce::CallOutBox::launchAsynchronously (std::move (picker), addBtn.getScreenBounds(), nullptr);
+}
 
-    m.showMenuAsync (juce::PopupMenu::Options(), [this, types, monoToStereoItemId, stereoToMonoItemId, rescanItemId] (int res)
+void PluginListView::addFromPicker (const juce::PluginDescription& desc)
+{
+    if (desc.fileOrIdentifier == PluginChain::monoToStereoId)
     {
-        if (res <= 0) return;
+        engine.getChain().addMonoToStereo();
+        commitChange();
+        return;
+    }
+    if (desc.fileOrIdentifier == PluginChain::stereoToMonoId)
+    {
+        engine.getChain().addStereoToMono();
+        commitChange();
+        return;
+    }
 
-        if (res == monoToStereoItemId)
-        {
-            engine.getChain().addMonoToStereo();
-            commitChange();
-            return;
-        }
-
-        if (res == stereoToMonoItemId)
-        {
-            engine.getChain().addStereoToMono();
-            commitChange();
-            return;
-        }
-
-        if (res == rescanItemId) { engine.rescanAllPlugins(); updateScanUi(); return; }
-
-        auto desc = types[res - 1];
-        double sr = engine.getDeviceManager().getCurrentAudioDevice() != nullptr
-                  ? engine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 48000.0;
-        juce::String err;
-        if (engine.getChain().addPlugin (engine.getFormatManager(), desc, sr, 128, err))
-            commitChange();
-        else
-            juce::Logger::writeToLog ("Plugin-Load: " + err);
-    });
+    double sr = engine.getDeviceManager().getCurrentAudioDevice() != nullptr
+              ? engine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 48000.0;
+    juce::String err;
+    if (engine.getChain().addPlugin (engine.getFormatManager(), desc, sr, 128, err))
+        commitChange();
+    else
+        juce::Logger::writeToLog ("Plugin-Load: " + err);
 }
 
 void PluginListView::showFolderMenu()

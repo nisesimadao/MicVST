@@ -8,7 +8,7 @@
 //   - gemeldete Latenz des Plugins (getLatencySamples),
 //   - Bypass-Schalter,
 //   - Mülleimer-Icon zum Entfernen.
-// Oben ein "+ Plugin"-Button (Dropdown aus KnownPluginList + internes Mono->Stereo).
+// Oben ein "+ Plugin"-Button (öffnet den Such-Picker; enthält auch die Built-ins).
 class PluginListView : public juce::Component, private juce::Timer
 {
 public:
@@ -21,7 +21,8 @@ private:
 
     void timerCallback() override;      // hält die angezeigte Plugin-Latenz aktuell
 
-    void showAddMenu();
+    void showPluginPicker();            // "+ Plugin": Picker mit Suchfeld (CallOutBox)
+    void addFromPicker (const juce::PluginDescription&);
     void showFolderMenu();              // Custom-VST3-Ordner verwalten (hinzufügen/entfernen)
     void chooseFolder();                // VST3-Ordner per Dialog wählen + rescannen
     void openEditor (int row);

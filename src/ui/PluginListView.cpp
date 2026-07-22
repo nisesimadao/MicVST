@@ -156,6 +156,9 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     scanLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     addChildComponent (scanLabel);       // nur sichtbar während des Scans
     addChildComponent (scanBar);
+    addChildComponent (skipScanBtn);
+    skipScanBtn.setTooltip ("Skip the plugin that is currently being scanned");
+    skipScanBtn.onClick = [this] { engine.skipCurrentScanFile(); };
     skipLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
     skipLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
     addChildComponent (skipLabel);
@@ -203,6 +206,8 @@ void PluginListView::resized()
     if (scanLabel.isVisible())
     {
         auto row = r.removeFromTop (22);
+        skipScanBtn.setBounds (row.removeFromRight (48).reduced (0, 1));
+        row.removeFromRight (4);
         scanBar.setBounds (row.removeFromRight (120).reduced (0, 4));
         scanLabel.setBounds (row);
         r.removeFromTop (2);
@@ -369,11 +374,16 @@ void PluginListView::showFolderMenu()
     m.addSeparator();
     m.addItem (rescanItemId, "Rescan all plugins", ! engine.isScanning());
 
+    constexpr int retryItemId = 4;
+    m.addItem (retryItemId, "Retry skipped plugins",
+               ! engine.isScanning() && ! engine.getSkippedPlugins().isEmpty());
+
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&manageFoldersBtn),
-        [this, rescanItemId] (int res)
+        [this, rescanItemId, retryItemId] (int res)
         {
             if (res == 1) { chooseFolder(); return; }
             if (res == rescanItemId) { engine.rescanAllPlugins(); updateScanUi(); return; }
+            if (res == retryItemId) { engine.retrySkippedPlugins(); updateScanUi(); return; }
             if (res >= 1000)
             {
                 const auto& f = engine.getPluginFolders();
@@ -425,6 +435,7 @@ void PluginListView::updateScanUi()
     addBtn.setEnabled (! scanning);
     scanLabel.setVisible (scanning);
     scanBar.setVisible (scanning);
+    skipScanBtn.setVisible (scanning);
 
     const auto& skips = engine.getSkippedPlugins();
     skipLabel.setVisible (! scanning && ! skips.isEmpty());

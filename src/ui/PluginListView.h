@@ -73,6 +73,7 @@ private:
     juce::Label scanLabel;               // "Scanning plugins... 12/34 - Name"
     double scanProgress = 0.0;           // 0..1, von ProgressBar per Referenz gelesen
     juce::ProgressBar scanBar { scanProgress };
+    juce::TextButton skipScanBtn { "Skip" };   // überspringt das aktuell scannende Plugin
     juce::Label skipLabel;               // "N plugin(s) skipped - hover for details"
 
     AudioEngine& engine;

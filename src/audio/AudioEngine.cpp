@@ -174,7 +174,7 @@ void AudioEngine::loadPluginCache()
         juce::Logger::writeToLog ("Plugin-Cache fehlt/korrupt -> voller Scan");
 }
 
-void AudioEngine::startBackgroundScan()
+void AudioEngine::startBackgroundScan (int timeoutMs)
 {
     if (isScanning()) { rescanQueued = true; return; }
 
@@ -194,7 +194,8 @@ void AudioEngine::startBackgroundScan()
         {
             if (onScanProgress) onScanProgress (cur, total, name);
         },
-        [this] (ScanOutcome outcome) { handleScanFinished (outcome); });
+        [this] (ScanOutcome outcome) { handleScanFinished (outcome); },
+        timeoutMs);
 }
 
 void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
@@ -230,6 +231,18 @@ void AudioEngine::rescanAllPlugins()
     skippedPlugins.clear();
     pluginCacheFile().deleteFile();
     startBackgroundScan();
+}
+
+void AudioEngine::retrySkippedPlugins()
+{
+    if (isScanning() || skippedPlugins.isEmpty()) return;
+    skippedPlugins.clear();   // Cache/Fundliste bleiben -> nur die Geskippten werden gescannt
+    startBackgroundScan (ScanCoordinator::retryTimeoutMs);
+}
+
+void AudioEngine::skipCurrentScanFile()
+{
+    if (scanner != nullptr) scanner->skipCurrentFile();
 }
 
 void AudioEngine::pruneOutsideFolders()

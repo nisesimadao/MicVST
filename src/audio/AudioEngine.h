@@ -45,8 +45,10 @@ public:
 
     // --- Plugin-Scan (out-of-process, asynchron, gecacht) ---
     void loadPluginCache();                    // beim Start VOR applyState aufrufen
-    void startBackgroundScan();                // scannt nur neue/geänderte Dateien
+    void startBackgroundScan (int timeoutMs = ScanCoordinator::defaultTimeoutMs);
     void rescanAllPlugins();                   // Cache + Skip-Liste leeren, alles neu
+    void retrySkippedPlugins();                // nur Skip-Liste leeren, mit großem Timeout scannen
+    void skipCurrentScanFile();                // Skip-Button: aktuelle Datei überspringen
     bool isScanning() const { return scanner != nullptr; }
     const juce::Array<SkippedPlugin>& getSkippedPlugins() const { return skippedPlugins; }
     std::function<void (int, int, juce::String)> onScanProgress;   // current(1-based), total, name

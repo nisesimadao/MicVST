@@ -59,14 +59,17 @@ struct PluginScanCacheTest : juce::UnitTest
 };
 static PluginScanCacheTest pluginScanCacheTest;
 
-// Fake-Runner: liefert pro Datei ein vorkonfiguriertes Ergebnis.
+// Fake-Runner: liefert pro Datei ein vorkonfiguriertes Ergebnis; respektiert shouldSkip.
 struct FakeRunner : ScanProcessRunner
 {
     std::map<juce::String, ScanProcessResult> results;
     juce::StringArray calls;
-    ScanProcessResult run (const juce::String& path, int, std::function<bool()>) override
+    ScanProcessResult run (const juce::String& path, int, std::function<bool()>,
+                           std::function<bool()> shouldSkip) override
     {
         calls.add (path);
+        if (shouldSkip())
+            return { ScanProcessResult::Status::skippedByUser, {} };
         auto it = results.find (path);
         return it != results.end() ? it->second : ScanProcessResult{};
     }
@@ -125,6 +128,26 @@ struct RunScanTest : juce::UnitTest
             expect (! out.completed);
             expectEquals ((int) r.calls.size(), 0);
             expectEquals (out.skipped.size(), 0);
+        }
+
+        beginTest ("user skip only affects the current file and is reset per file");
+        {
+            FakeRunner r;
+            r.results["C:/v/A.vst3"] = { ScanProcessResult::Status::ok,
+                                         scanResultXmlFor (makeDesc ("A", "C:/v/A.vst3")) };
+            r.results["C:/v/C.vst3"] = { ScanProcessResult::Status::ok,
+                                         scanResultXmlFor (makeDesc ("C", "C:/v/C.vst3")) };
+            std::atomic<bool> skipRequest { false };
+            // Skip-Wunsch beim Fortschritts-Callback von Datei B setzen (wie ein UI-Klick).
+            auto out = runScan ({ "C:/v/A.vst3", "C:/v/B.vst3", "C:/v/C.vst3" }, r, 1000,
+                                [&] (int, int, const juce::String& n)
+                                { if (n == "B") skipRequest.store (true); },
+                                [] { return false; }, &skipRequest);
+            expect (out.completed);
+            expectEquals (out.found.size(), 2);
+            expectEquals (out.skipped.size(), 1);
+            expectEquals (out.skipped[0].file, juce::String ("C:/v/B.vst3"));
+            expectEquals (out.skipped[0].reason, juce::String ("skipped"));
         }
     }
 };

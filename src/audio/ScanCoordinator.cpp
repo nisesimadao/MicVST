@@ -2,7 +2,8 @@
 
 ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, int timeoutMs,
                      std::function<void (int, int, const juce::String&)> progress,
-                     std::function<bool()> shouldExit)
+                     std::function<bool()> shouldExit,
+                     std::atomic<bool>* skipRequest)
 {
     ScanOutcome out;
     const int total = files.size();
@@ -11,11 +12,16 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
     {
         if (shouldExit && shouldExit()) return out;   // completed bleibt false
 
+        if (skipRequest != nullptr)
+            skipRequest->store (false);   // Skip-Wunsch gilt immer nur für die aktuelle Datei
+
         const auto& file = files[i];
         if (progress)
             progress (i + 1, total, juce::File (file).getFileNameWithoutExtension());
 
-        auto r = runner.run (file, timeoutMs, shouldExit ? shouldExit : [] { return false; });
+        auto r = runner.run (file, timeoutMs,
+                             shouldExit ? shouldExit : [] { return false; },
+                             [skipRequest] { return skipRequest != nullptr && skipRequest->load(); });
 
         if (r.status == ScanProcessResult::Status::aborted)
             return out;
@@ -31,8 +37,10 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
             r.status = ScanProcessResult::Status::failed;   // ok ohne brauchbares XML = failed
         }
 
-        out.skipped.add ({ file,
-                           r.status == ScanProcessResult::Status::timeout ? "unresponsive" : "failed",
+        const auto reason = r.status == ScanProcessResult::Status::timeout       ? "unresponsive"
+                          : r.status == ScanProcessResult::Status::skippedByUser ? "skipped"
+                                                                                 : "failed";
+        out.skipped.add ({ file, reason,
                            juce::File (file).getLastModificationTime().toMilliseconds() });
     }
 
@@ -124,7 +132,8 @@ namespace
     struct ChildProcessRunner : ScanProcessRunner
     {
         ScanProcessResult run (const juce::String& pluginPath, int timeoutMs,
-                               std::function<bool()> shouldAbort) override
+                               std::function<bool()> shouldAbort,
+                               std::function<bool()> shouldSkip) override
         {
             const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
             const auto outFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
@@ -141,6 +150,8 @@ namespace
             {
                 if (shouldAbort()) { proc.kill(); outFile.deleteFile();
                                      return { ScanProcessResult::Status::aborted, {} }; }
+                if (shouldSkip()) { proc.kill(); outFile.deleteFile();
+                                    return { ScanProcessResult::Status::skippedByUser, {} }; }
                 if (juce::Time::getMillisecondCounter() - startMs >= (juce::uint32) timeoutMs)
                 {   proc.kill(); outFile.deleteFile();
                     return { ScanProcessResult::Status::timeout, {} }; }
@@ -162,11 +173,13 @@ namespace
 ScanCoordinator::ScanCoordinator (juce::StringArray filesToScan,
                                   std::function<void (int, int, juce::String)> onProgress,
                                   std::function<void (ScanOutcome)> onFinished,
+                                  int timeoutMsIn,
                                   std::unique_ptr<ScanProcessRunner> runnerOverride)
     : juce::Thread ("PluginScan"),
       files (std::move (filesToScan)),
       progressCb (std::move (onProgress)),
       finishedCb (std::move (onFinished)),
+      timeoutMs (timeoutMsIn),
       runner (runnerOverride != nullptr ? std::move (runnerOverride)
                                         : std::make_unique<ChildProcessRunner>())
 {
@@ -184,14 +197,14 @@ ScanCoordinator::~ScanCoordinator()
 
 void ScanCoordinator::run()
 {
-    auto outcome = runScan (files, *runner, defaultTimeoutMs,
+    auto outcome = runScan (files, *runner, timeoutMs,
         [this] (int cur, int total, const juce::String& name)
         {
             if (progressCb)
                 juce::MessageManager::callAsync ([alive = alive, cb = progressCb, cur, total, name]
                                                  { if (*alive) cb (cur, total, name); });
         },
-        [this] { return threadShouldExit(); });
+        [this] { return threadShouldExit(); }, &skipRequest);
 
     if (outcome.completed && finishedCb)
         juce::MessageManager::callAsync ([alive = alive, cb = finishedCb, outcome]

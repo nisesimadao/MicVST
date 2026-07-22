@@ -247,3 +247,23 @@ struct FilterFilesNeedingScanTest : juce::UnitTest
     }
 };
 static FilterFilesNeedingScanTest filterFilesNeedingScanTest;
+
+struct PathScopeTest : juce::UnitTest
+{
+    PathScopeTest() : juce::UnitTest ("pathIsInsideAnyFolder") {}
+    void runTest() override
+    {
+        const juce::StringArray folders { "C:\\Plugins", "D:\\VST3" };
+        beginTest ("children match, prefix-siblings do not");
+        expect (pathIsInsideAnyFolder ("C:\\Plugins\\X.vst3", folders));
+        expect (pathIsInsideAnyFolder ("C:\\Plugins\\Vendor\\Deep\\X.vst3", folders));
+        expect (pathIsInsideAnyFolder ("D:\\VST3\\A.vst3", folders));
+        expect (! pathIsInsideAnyFolder ("C:\\Plugins2\\X.vst3", folders));   // der alte Bug
+        expect (! pathIsInsideAnyFolder ("E:\\Other\\X.vst3", folders));
+        beginTest ("case-insensitive on Windows");
+        expect (pathIsInsideAnyFolder ("c:\\plugins\\x.vst3", folders));
+        beginTest ("empty folder entries are ignored");
+        expect (! pathIsInsideAnyFolder ("C:\\Anything\\X.vst3", juce::StringArray { "" }));
+    }
+};
+static PathScopeTest pathScopeTest;

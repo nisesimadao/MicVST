@@ -105,6 +105,16 @@ void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome)
     }
 }
 
+bool pathIsInsideAnyFolder (const juce::String& path, const juce::StringArray& folders)
+{
+    const juce::File f (path);
+    for (auto& folder : folders)
+        if (folder.isNotEmpty()
+            && (f == juce::File (folder) || f.isAChildOf (juce::File (folder))))
+            return true;
+    return false;
+}
+
 // ============================ echter Kindprozess-Runner ============================
 
 namespace

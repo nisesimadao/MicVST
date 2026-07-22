@@ -144,13 +144,26 @@ juce::File AudioEngine::pluginCacheFile()
               .getChildFile ("MicVST").getChildFile ("plugin_cache.xml");
 }
 
+juce::StringArray AudioEngine::scanRoots() const
+{
+    // JUCE-Default-Orte statt hartkodiertem Pfad: deckt neben Program Files auch
+    // %LOCALAPPDATA%\Programs\Common\VST3 und die VST3_PATH-Umgebungsvariable ab.
+    juce::VST3PluginFormat vst3;
+    juce::StringArray roots;
+    const auto defaults = vst3.getDefaultLocationsToSearch();
+    for (int i = 0; i < defaults.getNumPaths(); ++i)
+        roots.add (defaults[i].getFullPathName());
+    for (auto& f : pluginFolders)
+        if (f.isNotEmpty()) roots.add (f);
+    return roots;
+}
+
 juce::StringArray AudioEngine::listVst3Files() const
 {
     juce::VST3PluginFormat vst3;
     juce::FileSearchPath paths;
-    paths.add (juce::File ("C:/Program Files/Common Files/VST3"));
-    for (auto& f : pluginFolders)
-        if (f.isNotEmpty()) paths.add (juce::File (f));
+    for (auto& r : scanRoots())
+        paths.add (juce::File (r));
     paths.removeRedundantPaths();
     return vst3.searchPathsForPlugins (paths, true, true);
 }
@@ -221,18 +234,11 @@ void AudioEngine::rescanAllPlugins()
 
 void AudioEngine::pruneOutsideFolders()
 {
-    auto inScope = [this] (const juce::String& path)
-    {
-        if (path.startsWithIgnoreCase ("C:\\Program Files\\Common Files\\VST3")
-            || path.startsWithIgnoreCase ("C:/Program Files/Common Files/VST3")) return true;
-        for (auto& f : pluginFolders)
-            if (f.isNotEmpty() && path.startsWithIgnoreCase (f)) return true;
-        return false;
-    };
+    const auto roots = scanRoots();
     for (auto& t : knownPlugins.getTypes())
-        if (! inScope (t.fileOrIdentifier)) knownPlugins.removeType (t);
+        if (! pathIsInsideAnyFolder (t.fileOrIdentifier, roots)) knownPlugins.removeType (t);
     for (int i = skippedPlugins.size(); --i >= 0;)
-        if (! inScope (skippedPlugins[i].file)) skippedPlugins.remove (i);
+        if (! pathIsInsideAnyFolder (skippedPlugins[i].file, roots)) skippedPlugins.remove (i);
 }
 
 void AudioEngine::addPluginFolder (const juce::String& folder)

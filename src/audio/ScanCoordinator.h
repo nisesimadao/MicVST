@@ -50,6 +50,10 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
 // wieder veraltet -> Dauer-Rescan-Schleife. Beim Merge ist der Kindprozess beendet.
 void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome);
 
+// Liegt path in (oder unter) einem der Ordner? Echter Pfadvergleich statt String-Prefix
+// (C:\Plugins darf nicht C:\Plugins2\... matchen); auf Windows case-insensitiv.
+bool pathIsInsideAnyFolder (const juce::String& path, const juce::StringArray& folders);
+
 // Hintergrund-Thread um runScan herum; marshallt Callbacks auf den Message-Thread.
 // Besitzt den echten ChildProcess-Runner (oder einen injizierten für Tests).
 class ScanCoordinator : private juce::Thread

@@ -113,6 +113,7 @@ private:
     bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
     juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
     juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
+    juce::StringArray scanRoots() const;           // JUCE-Default-VST3-Orte + Custom-Ordner
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
     void restoreChain (const juce::Array<PluginEntryState>& plugins);
     void handleScanFinished (const ScanOutcome&);

@@ -107,7 +107,7 @@ private:
     void audioDeviceStopped() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
-    MicVSTDeviceManager deviceManager;   // nur WASAPI-Shared -> keine Typ-Auswahl im Selector
+    MicVSTDeviceManager deviceManager;   // WASAPI Low-Latency bevorzugt, Shared als Fallback (siehe MicVSTDeviceManager)
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer player;
     std::unique_ptr<PluginChain> pluginChain;

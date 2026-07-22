@@ -44,7 +44,7 @@ recommended - MicVST detects it automatically. VoiceMeeter and Virtual Audio Cab
 3. **Build your plugin chain** (bottom list, “+ Plugin”):
    - “+ Plugin” opens a **searchable list** (grouped by manufacturer when empty) including all found
      VST3 effects and built-in nodes (Mono → Stereo, Stereo → Mono); add any effects you like
-     (e.g. a noise-suppressor, EQ, compressor). Built-ins are included.
+     (e.g. a noise-suppressor, EQ, compressor).
    - optionally insert the built-in **Mono → Stereo** node at the point where you want stereo
      (before it the chain runs mono = less CPU),
    - drag rows by the **handle on the left** to reorder; the **trash icon on the right** removes a
@@ -120,7 +120,7 @@ MicVST adds only the **smallest buffer necessary** to run your VST3 chain - typi
 
 A few things worth knowing:
 
-- **Buffer size** is **shared mode** - Windows sets one engine period (typically 480 samples at 48 kHz = ~10 ms) and MicVST uses it directly. When your selected devices support multiple buffer sizes, a "Buffer" dropdown appears in the device panel ("Auto" = device default); otherwise it's fixed. MicVST shows the buffer and live end-to-end latency under the device list.
+- **Buffer size**: in low-latency mode the device reports its supported sizes and a "Buffer" dropdown appears in the device panel ("Auto" = device default); otherwise Windows' shared engine period (typically 480 samples at 48 kHz = ~10 ms) is used directly. MicVST shows the buffer and live end-to-end latency under the device list.
 - **Total latency you hear is mostly downstream of MicVST.** The signal path is `Mic → MicVST → virtual cable → your app (Discord/OBS/…)`. The virtual cable and the receiving app each read through Windows shared audio too, and the cable has its own buffering. If you want to trim the cable's part, VB-Cable exposes a latency / internal-sample-rate setting in its own control panel (`VBCABLE_ControlPanel.exe`).
 - **For talking into Discord/OBS/Zoom, latency is inaudible** - your microphone signal travels one way to your listeners, so a few milliseconds never matter. (Low buffer sizes only matter when you monitor *yourself* live or play an instrument in real time, which isn't what MicVST is for.)
 - **ASIO / ASIO4All won't help here.** ASIO is built for a single exclusive in-and-out device and doesn't fit a mic-in / virtual-cable-out setup - and the receiving app would still read through shared audio anyway. MicVST is already on the most direct path Windows offers for this job.

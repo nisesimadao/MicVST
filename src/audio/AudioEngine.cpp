@@ -203,15 +203,16 @@ void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
 {
     scanner = nullptr;   // Callback kommt via callAsync -> wir sind auf dem Message-Thread
 
-    // Ordner können während des Scans entfernt worden sein -> Fremdes vor dem Übernehmen wegputzen.
-    pruneOutsideFolders();
-
     mergeScanResults (knownPlugins, outcome);
     for (auto& s : outcome.skipped)
     {
         skippedPlugins.add (s);
         juce::Logger::writeToLog ("Scan übersprungen (" + s.reason + "): " + s.file);
     }
+
+    // Ordner können während des Scans entfernt worden sein -> NACH dem Übernehmen wegputzen,
+    // damit auch frisch gescannte Fremd-Ergebnisse rausfliegen.
+    pruneOutsideFolders();
 
     PluginScanCache::save (pluginCacheFile(), knownPlugins, skippedPlugins);
 

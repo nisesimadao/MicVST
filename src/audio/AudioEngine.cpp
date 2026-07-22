@@ -191,8 +191,7 @@ void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
     // Ordner können während des Scans entfernt worden sein -> Fremdes vor dem Übernehmen wegputzen.
     pruneOutsideFolders();
 
-    for (auto& d : outcome.found)
-        knownPlugins.addType (d);
+    mergeScanResults (knownPlugins, outcome);
     for (auto& s : outcome.skipped)
     {
         skippedPlugins.add (s);

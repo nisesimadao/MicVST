@@ -152,3 +152,98 @@ struct ParseScanResultTest : juce::UnitTest
     }
 };
 static ParseScanResultTest parseScanResultTest;
+
+struct MergeScanResultsTest : juce::UnitTest
+{
+    MergeScanResultsTest() : juce::UnitTest ("mergeScanResults") {}
+    void runTest() override
+    {
+        // Echte Temp-Datei: der Re-Stamp liest die mtime vom Dateisystem.
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                      .getNonexistentChildFile ("micvst_merge", ".vst3");
+        tmp.replaceWithText ("fake");
+        const auto realTime = tmp.getLastModificationTime();
+
+        beginTest ("found entries get freshly stamped mtime");
+        {
+            juce::KnownPluginList list;
+            auto d = makeDesc ("Fresh", tmp.getFullPathName());
+            d.lastFileModTime = juce::Time (1);   // absichtlich falsch (Kind-erfasste stale mtime)
+            ScanOutcome o; o.found.add (d);
+            mergeScanResults (list, o);
+            expectEquals (list.getNumTypes(), 1);
+            expect (list.getTypes()[0].lastFileModTime == realTime);
+        }
+
+        beginTest ("old entry of same file (different uid) is replaced, others untouched");
+        {
+            juce::KnownPluginList list;
+            auto oldEntry = makeDesc ("Old", tmp.getFullPathName());  oldEntry.uniqueId = 0x1111;
+            auto other    = makeDesc ("Other", "C:/v/Other.vst3");    other.uniqueId    = 0x9999;
+            list.addType (oldEntry); list.addType (other);
+
+            auto updated = makeDesc ("New", tmp.getFullPathName());   updated.uniqueId  = 0x2222;
+            ScanOutcome o; o.found.add (updated);
+            mergeScanResults (list, o);
+
+            expectEquals (list.getNumTypes(), 2);   // Old ersetzt, Other bleibt
+            expect (list.getTypeForFile (tmp.getFullPathName()) != nullptr);
+            expectEquals (list.getTypeForFile (tmp.getFullPathName())->uniqueId, 0x2222);
+            expect (list.getTypeForFile ("C:/v/Other.vst3") != nullptr);
+        }
+
+        tmp.deleteFile();
+    }
+};
+static MergeScanResultsTest mergeScanResultsTest;
+
+struct FilterFilesNeedingScanTest : juce::UnitTest
+{
+    FilterFilesNeedingScanTest() : juce::UnitTest ("filterFilesNeedingScan") {}
+    void runTest() override
+    {
+        juce::VST3PluginFormat vst3;
+        auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                      .getNonexistentChildFile ("micvst_filter", "");
+        dir.createDirectory();
+        auto mk = [&] (const juce::String& name)
+        {
+            auto f = dir.getChildFile (name);
+            f.replaceWithText ("fake");
+            return f;
+        };
+        auto upToDate = mk ("UpToDate.vst3"), changed = mk ("Changed.vst3"),
+             skipped = mk ("Skipped.vst3"), staleSkip = mk ("StaleSkip.vst3");
+
+        juce::KnownPluginList list;
+        auto dUp = makeDesc ("Up", upToDate.getFullPathName());
+        dUp.lastFileModTime = upToDate.getLastModificationTime();     // aktuell -> kein Rescan
+        list.addType (dUp);
+        auto dCh = makeDesc ("Ch", changed.getFullPathName());
+        dCh.lastFileModTime = juce::Time (1);                          // stale -> Rescan
+        dCh.uniqueId = 0x2222;
+        list.addType (dCh);
+
+        juce::Array<SkippedPlugin> skips;
+        skips.add ({ skipped.getFullPathName(), "failed",
+                     skipped.getLastModificationTime().toMilliseconds() });   // aktiv
+        skips.add ({ staleSkip.getFullPathName(), "failed", 1 });             // stale -> Retry
+
+        const juce::StringArray all { upToDate.getFullPathName(), changed.getFullPathName(),
+                                      skipped.getFullPathName(), staleSkip.getFullPathName() };
+        auto out = filterFilesNeedingScan (all, list, vst3, skips);
+
+        beginTest ("cache hit is filtered, mtime mismatch is rescanned");
+        expect (! out.contains (upToDate.getFullPathName()));
+        expect (out.contains (changed.getFullPathName()));
+
+        beginTest ("active skip filters, stale skip is dropped and rescanned");
+        expect (! out.contains (skipped.getFullPathName()));
+        expect (out.contains (staleSkip.getFullPathName()));
+        expectEquals (skips.size(), 1);   // nur der aktive Skip bleibt
+        expectEquals (skips[0].file, skipped.getFullPathName());
+
+        dir.deleteRecursively();
+    }
+};
+static FilterFilesNeedingScanTest filterFilesNeedingScanTest;

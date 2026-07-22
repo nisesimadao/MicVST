@@ -64,7 +64,10 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
     {
         const juce::File f (skipped[i].file);
         if (! f.exists() || f.getLastModificationTime().toMilliseconds() != skipped[i].fileTimeMs)
+        {
+            juce::Logger::writeToLog ("Scan: Skip aufgehoben (Datei geändert/entfernt): " + skipped[i].file);
             skipped.remove (i);
+        }
     }
 
     auto isSkipped = [&] (const juce::String& file)
@@ -75,9 +78,31 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
 
     juce::StringArray out;
     for (auto& f : allFiles)
-        if (! list.isListingUpToDate (f, format) && ! isSkipped (f))
-            out.add (f);
+    {
+        if (isSkipped (f) || list.isListingUpToDate (f, format))
+            continue;
+        // Grund loggen: macht den Dauer-Rescan-Fall in log.txt remote diagnostizierbar.
+        juce::Logger::writeToLog (juce::String ("Scan ")
+            + (list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f);
+        out.add (f);
+    }
     return out;
+}
+
+void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome)
+{
+    juce::StringArray scannedFiles;
+    for (auto& d : outcome.found)
+        scannedFiles.addIfNotAlreadyThere (d.fileOrIdentifier);
+    for (auto& t : list.getTypes())
+        if (scannedFiles.contains (t.fileOrIdentifier))
+            list.removeType (t);
+
+    for (auto d : outcome.found)   // Kopie: lastFileModTime wird neu gestempelt
+    {
+        d.lastFileModTime = juce::File (d.fileOrIdentifier).getLastModificationTime();
+        list.addType (d);
+    }
 }
 
 // ============================ echter Kindprozess-Runner ============================

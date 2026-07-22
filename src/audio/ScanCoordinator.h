@@ -42,6 +42,14 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
                                           juce::AudioPluginFormat& format,
                                           juce::Array<SkippedPlugin>& skipped);
 
+// Scan-Ergebnisse in die KnownPluginList übernehmen. Entfernt vorher Alteinträge
+// derselben Dateien (uid kann sich bei Plugin-Updates ändern; ein stehen bleibender
+// Alteintrag mit veralteter mtime erzwingt sonst bei jedem Start einen Rescan) und
+// stempelt lastFileModTime FRISCH: Plugins (UAD, Acustica, ...) schreiben beim
+// Laden/Entladen in ihre Bundles, die im Kindprozess erfasste mtime ist dann schon
+// wieder veraltet -> Dauer-Rescan-Schleife. Beim Merge ist der Kindprozess beendet.
+void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome);
+
 // Hintergrund-Thread um runScan herum; marshallt Callbacks auf den Message-Thread.
 // Besitzt den echten ChildProcess-Runner (oder einen injizierten für Tests).
 class ScanCoordinator : private juce::Thread

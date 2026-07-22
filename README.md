@@ -70,7 +70,7 @@ boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed
   windows
 - Scans all standard VST3 locations (Program Files, %LOCALAPPDATA%, VST3_PATH); **add custom
   VST3 folders** via “Manage VST3 Folders → Add folder...” Scanning runs **in the background**
-  (window opens instantly) in isolated helper processes with a 60-second timeout - a plugin that
+  (window opens instantly) in isolated helper processes with a 120-second timeout - a plugin that
   crashes or hangs the scan is skipped (with a hint in the UI); you can skip the current plugin
   mid-scan or “Retry skipped plugins” (with a generous 10-minute timeout) for huge shell plugins
   like Waves WaveShell. Results are cached, so later starts are instant. “Rescan all plugins”

@@ -16,7 +16,8 @@ project follows [Semantic Versioning](https://semver.org/).
   buffer sizes, a "Buffer" row appears in the device panel ("Auto" = device default).
 
 ### Changed
-- Scan timeout raised from 30 s to 60 s.
+- Scan timeout raised from 30 s to 120 s, so large shell plugins (e.g. Waves WaveShell)
+  usually finish on the initial scan already.
 - All standard VST3 locations are scanned (Program Files, %LOCALAPPDATA%, VST3_PATH).
 - Audio devices now open in WASAPI low-latency mode when available (shared as fallback).
 
@@ -26,6 +27,8 @@ project follows [Semantic Versioning](https://semver.org/).
 - Plugin updates that change the internal plugin ID no longer cause endless rescans.
 - Removing a custom folder like "C:\Plugins" no longer prunes plugins from sibling
   folders like "C:\Plugins2".
+- Editing the plugin chain or the custom VST3 folders no longer resets the update-check
+  consent and the saved window position in the config file.
 
 ## [1.0.3] - 2026-07-21
 

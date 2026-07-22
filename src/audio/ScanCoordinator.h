@@ -65,7 +65,7 @@ bool pathIsInsideAnyFolder (const juce::String& path, const juce::StringArray& f
 class ScanCoordinator : private juce::Thread
 {
 public:
-    static constexpr int defaultTimeoutMs = 60000;    // 30 s war zu knapp für kalte Erst-Scans
+    static constexpr int defaultTimeoutMs = 120000;   // großzügig: auch Shell-Plugins (WaveShell) schaffen den Erstscan oft
     static constexpr int retryTimeoutMs   = 600000;   // "Retry skipped": WaveShell & Co. brauchen Minuten
 
     ScanCoordinator (juce::StringArray filesToScan,

@@ -229,9 +229,9 @@ struct FilterFilesNeedingScanTest : juce::UnitTest
         auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
                       .getNonexistentChildFile ("micvst_filter", "");
         dir.createDirectory();
-        auto mk = [&] (const juce::String& name)
+        auto mk = [&] (const juce::String& fileName)
         {
-            auto f = dir.getChildFile (name);
+            auto f = dir.getChildFile (fileName);
             f.replaceWithText ("fake");
             return f;
         };

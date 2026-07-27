@@ -26,21 +26,6 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
         if (r.status == ScanProcessResult::Status::aborted)
             return out;
 
-        if (r.status == ScanProcessResult::Status::partial)
-        {
-            // Crash mitten in der Shell-Enumeration: Gerettetes übernehmen, Datei mit
-            // aussagekräftigem Grund skippen (Retry versucht sie wie gehabt erneut).
-            juce::Array<juce::PluginDescription> descs;
-            juce::String crashCode;
-            parseScanResultXml (r.resultXmlText, descs, &crashCode);
-            out.found.addArray (descs);
-            out.skipped.add ({ file,
-                               "crashed (" + juce::String (descs.size()) + " plugin(s) rescued"
-                                   + (crashCode.isNotEmpty() ? ", " + crashCode : juce::String()) + ")",
-                               effectiveModTime (juce::File (file)).toMilliseconds() });
-            continue;
-        }
-
         if (r.status == ScanProcessResult::Status::ok)
         {
             juce::Array<juce::PluginDescription> descs;
@@ -50,6 +35,31 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
                 continue;
             }
             r.status = ScanProcessResult::Status::failed;   // ok ohne brauchbares XML = failed
+        }
+
+        // Crash-Rescue: gilt sowohl für "partial" (planmäßig, Exit 3 mit geretteter XML) als
+        // auch für "failed" mit vorhandener resultXmlText -- der Kindprozess kann NACH dem
+        // Schreiben der Ergebnisdatei ein zweites Mal crashen (z. B. eine zweite SEH-Exception
+        // beim DLL-Teardown in DLL_PROCESS_DETACH); der Exit-Code ist dann ein NTSTATUS statt 3,
+        // obwohl das Ergebnis vollständig auf der Platte steht. Eine Rettung gilt als gültig,
+        // wenn entweder Kinder geparst wurden ODER die Root ein crashCode-Attribut trägt
+        // (gültige, aber leere Rettung); bei kaputtem/fremdem XML fällt der Code unten in die
+        // normale "failed"-Behandlung durch.
+        if ((r.status == ScanProcessResult::Status::partial
+             || r.status == ScanProcessResult::Status::failed) && r.resultXmlText.isNotEmpty())
+        {
+            juce::Array<juce::PluginDescription> descs;
+            juce::String crashCode;
+            const bool parsedOk = parseScanResultXml (r.resultXmlText, descs, &crashCode);
+            if (parsedOk || crashCode.isNotEmpty())
+            {
+                out.found.addArray (descs);
+                out.skipped.add ({ file,
+                                   "crashed (" + juce::String (descs.size()) + " plugin(s) rescued"
+                                       + (crashCode.isNotEmpty() ? ", " + crashCode : juce::String()) + ")",
+                                   effectiveModTime (juce::File (file)).toMilliseconds() });
+                continue;
+            }
         }
 
         // Eigene Exit-Codes (0/1/2/3) sind kein Crash; alles darüber ist ein NTSTATUS.
@@ -86,7 +96,8 @@ bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDe
 juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
                                           const juce::KnownPluginList& list,
                                           juce::AudioPluginFormat& format,
-                                          juce::Array<SkippedPlugin>& skipped)
+                                          juce::Array<SkippedPlugin>& skipped,
+                                          const juce::StringArray& forceRescan)
 {
     // Stale Skips entfernen: Datei geändert (Plugin-Update) -> neuer Versuch.
     for (int i = skipped.size(); --i >= 0;)
@@ -108,7 +119,13 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
     juce::StringArray out;
     for (auto& f : allFiles)
     {
-        if (isSkipped (f) || list.isListingUpToDate (f, format))
+        if (isSkipped (f))
+            continue;
+        // Crash-Rescue: mergeScanResults stempelt gerettete Typen SOFORT mit ihrer aktuellen
+        // effectiveModTime, der Cache-Eintrag sieht danach also aktuell aus, obwohl die Datei
+        // noch skip-gelistet war und erneut versucht werden muss -> Cache-Check hier umgehen.
+        const bool forced = forceRescan.contains (f);
+        if (! forced && list.isListingUpToDate (f, format))
             continue;
         // Grund + Zeitstempel loggen: macht den Dauer-Rescan-Fall in log.txt remote
         // diagnostizierbar (cache = gespeicherte mtime, datei = aktuelle effectiveModTime).
@@ -117,7 +134,8 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
             detail = " (cache=" + juce::String (t->lastFileModTime.toMilliseconds())
                    + " datei=" + juce::String (effectiveModTime (juce::File (f)).toMilliseconds()) + ")";
         juce::Logger::writeToLog (juce::String ("Scan ")
-            + (list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f + detail);
+            + (forced ? "(erzwungen): "
+                      : list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f + detail);
         out.add (f);
     }
     return out;
@@ -197,12 +215,15 @@ namespace
 
             ScanProcessResult r;
             r.exitCode = proc.getExitCode();
-            if (outFile.existsAsFile() && (r.exitCode == 0 || r.exitCode == 3))
-            {
-                r.status = r.exitCode == 0 ? ScanProcessResult::Status::ok
-                                           : ScanProcessResult::Status::partial;
+            r.status = r.exitCode == 0 ? ScanProcessResult::Status::ok
+                     : r.exitCode == 3 ? ScanProcessResult::Status::partial
+                                       : ScanProcessResult::Status::failed;
+            // XML IMMER laden, wenn vorhanden -- auch bei "failed": stirbt das Kind ein
+            // zweites Mal beim Teardown (DLL_PROCESS_DETACH), ist der Exit-Code ein NTSTATUS
+            // statt 3, obwohl die Ergebnisdatei vollständig geschrieben wurde. runScan rettet
+            // ein solches Ergebnis dann trotzdem (siehe dortiger Crash-Rescue-Zweig).
+            if (outFile.existsAsFile())
                 r.resultXmlText = outFile.loadFileAsString();
-            }
             outFile.deleteFile();
             return r;
         }

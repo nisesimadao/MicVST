@@ -175,12 +175,12 @@ void AudioEngine::loadPluginCache()
         juce::Logger::writeToLog ("Plugin-Cache fehlt/korrupt -> voller Scan");
 }
 
-void AudioEngine::startBackgroundScan (int timeoutMs)
+void AudioEngine::startBackgroundScan (int timeoutMs, const juce::StringArray& forceRescan)
 {
     if (isScanning()) { rescanQueued = true; return; }
 
     MicVST3Format vst3;
-    auto files = filterFilesNeedingScan (listVst3Files(), knownPlugins, vst3, skippedPlugins);
+    auto files = filterFilesNeedingScan (listVst3Files(), knownPlugins, vst3, skippedPlugins, forceRescan);
     juce::Logger::writeToLog ("Scan: " + juce::String (files.size()) + " Datei(en) zu scannen");
     if (files.isEmpty())
     {
@@ -238,8 +238,18 @@ void AudioEngine::rescanAllPlugins()
 void AudioEngine::retrySkippedPlugins()
 {
     if (isScanning() || skippedPlugins.isEmpty()) return;
+
+    // Crash-Rescue: Gerettete Typen sind im Cache schon mit AKTUELLER effectiveModTime
+    // gestempelt (mergeScanResults) -> ohne forceRescan hielte filterFilesNeedingScan die
+    // Datei für up-to-date und der Retry würde für sie stillschweigend nichts tun. Vor dem
+    // Leeren einsammeln (skippedPlugins ist danach weg), nur noch existierende Dateien.
+    juce::StringArray forceRescan;
+    for (auto& s : skippedPlugins)
+        if (juce::File (s.file).exists())
+            forceRescan.add (s.file);
+
     skippedPlugins.clear();   // Cache/Fundliste bleiben -> nur die Geskippten werden gescannt
-    startBackgroundScan (ScanCoordinator::retryTimeoutMs);
+    startBackgroundScan (ScanCoordinator::retryTimeoutMs, forceRescan);
 }
 
 void AudioEngine::skipCurrentScanFile()

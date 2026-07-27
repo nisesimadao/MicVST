@@ -61,7 +61,10 @@ public:
 
     // --- Plugin-Scan (out-of-process, asynchron, gecacht) ---
     void loadPluginCache();                    // beim Start VOR applyState aufrufen
-    void startBackgroundScan (int timeoutMs = ScanCoordinator::defaultTimeoutMs);
+    // forceRescan: siehe filterFilesNeedingScan -- Dateien, die trotz aktuell aussehendem
+    // Cache erneut versucht werden sollen (retrySkippedPlugins nach Crash-Rescue).
+    void startBackgroundScan (int timeoutMs = ScanCoordinator::defaultTimeoutMs,
+                              const juce::StringArray& forceRescan = {});
     void rescanAllPlugins();                   // Cache + Skip-Liste leeren, alles neu
     void retrySkippedPlugins();                // nur Skip-Liste leeren, mit großem Timeout scannen
     void skipCurrentScanFile();                // Skip-Button: aktuelle Datei überspringen

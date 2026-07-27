@@ -191,6 +191,60 @@ struct RunScanTest : juce::UnitTest
             auto out = runScan ({ "C:/v/NotAPlugin.vst3" }, r, 1000, {}, [] { return false; });
             expectEquals (out.skipped[0].reason, juce::String ("failed"));
         }
+
+        beginTest ("failed status with rescueable XML rescues the crash and carries the code");
+        {
+            // Zweiter Crash beim Kind-Teardown (DLL_PROCESS_DETACH): Exit-Code ist ein
+            // NTSTATUS statt 3, obwohl die Ergebnisdatei vollständig geschrieben wurde.
+            FakeRunner r;
+            juce::XmlElement root ("MicVSTScanResult");
+            root.setAttribute ("crashCode", "0xC0000005");
+            root.addChildElement (makeDesc ("Teardown", "C:/v/Teardown.vst3").createXml().release());
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::failed;
+            pr.exitCode = 0xC0000005u;
+            pr.resultXmlText = root.toString();
+            r.results["C:/v/Teardown.vst3"] = pr;
+
+            auto out = runScan ({ "C:/v/Teardown.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.found.size(), 1);
+            expectEquals (out.skipped.size(), 1);
+            expectEquals (out.skipped[0].reason,
+                          juce::String ("crashed (1 plugin(s) rescued, 0xC0000005)"));
+        }
+
+        beginTest ("partial with valid root but zero rescued children still carries the crash code");
+        {
+            FakeRunner r;
+            juce::XmlElement root ("MicVSTScanResult");
+            root.setAttribute ("crashCode", "0xC0000005");
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::partial;
+            pr.resultXmlText = root.toString();
+            pr.exitCode = 3;
+            r.results["C:/v/EmptyRescue.vst3"] = pr;
+
+            auto out = runScan ({ "C:/v/EmptyRescue.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.found.size(), 0);
+            expectEquals (out.skipped.size(), 1);
+            expectEquals (out.skipped[0].reason,
+                          juce::String ("crashed (0 plugin(s) rescued, 0xC0000005)"));
+        }
+
+        beginTest ("partial with malformed xml falls back to plain failed, exit 3 not decorated");
+        {
+            FakeRunner r;
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::partial;
+            pr.resultXmlText = "not xml";
+            pr.exitCode = 3;
+            r.results["C:/v/Malformed.vst3"] = pr;
+
+            auto out = runScan ({ "C:/v/Malformed.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.found.size(), 0);
+            expectEquals (out.skipped.size(), 1);
+            expectEquals (out.skipped[0].reason, juce::String ("failed"));
+        }
     }
 };
 static RunScanTest runScanTest;
@@ -337,6 +391,25 @@ struct FilterFilesNeedingScanTest : juce::UnitTest
         expect (out.contains (staleSkip.getFullPathName()));
         expectEquals (skips.size(), 1);   // nur der aktive Skip bleibt
         expectEquals (skips[0].file, skipped.getFullPathName());
+
+        beginTest ("force-list bypasses the cache-is-up-to-date check");
+        {
+            // Crash-Rescue: Cache-Eintrag ist nach der Rettung schon aktuell gestempelt,
+            // forceRescan erzwingt die Datei trotzdem erneut in die Scan-Liste.
+            auto forced = mk ("Forced.vst3");
+            juce::KnownPluginList forcedList;
+            auto dForced = makeDesc ("Forced", forced.getFullPathName());
+            dForced.lastFileModTime = effectiveModTime (forced);   // aktuell -> normalerweise kein Rescan
+            forcedList.addType (dForced);
+            juce::Array<SkippedPlugin> noSkips;
+
+            auto withoutForce = filterFilesNeedingScan ({ forced.getFullPathName() }, forcedList, vst3, noSkips);
+            expect (! withoutForce.contains (forced.getFullPathName()));
+
+            auto withForce = filterFilesNeedingScan ({ forced.getFullPathName() }, forcedList, vst3, noSkips,
+                                                     { forced.getFullPathName() });
+            expect (withForce.contains (forced.getFullPathName()));
+        }
 
         dir.deleteRecursively();
     }

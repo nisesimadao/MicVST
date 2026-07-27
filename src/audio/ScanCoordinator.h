@@ -48,10 +48,15 @@ bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDe
 
 // Welche Dateien müssen wirklich gescannt werden? Filtert Cache-Treffer und Skips heraus;
 // Skip-Einträge, deren Datei sich geändert hat (Update), werden dabei aus skipped entfernt.
+// forceRescan: Dateien, die den Cache-Check ("isListingUpToDate") überspringen, obwohl der
+// Cache aktuell aussieht (Crash-Rescue: mergeScanResults stempelt gerettete Typen sofort
+// frisch, ohne forceRescan würde die Datei danach nie wieder versucht). Skip-Filter und
+// Dedup gelten unverändert auch für erzwungene Dateien.
 juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
                                           const juce::KnownPluginList& list,
                                           juce::AudioPluginFormat& format,
-                                          juce::Array<SkippedPlugin>& skipped);
+                                          juce::Array<SkippedPlugin>& skipped,
+                                          const juce::StringArray& forceRescan = {});
 
 // Scan-Ergebnisse in die KnownPluginList übernehmen. Entfernt vorher Alteinträge
 // derselben Dateien (uid kann sich bei Plugin-Updates ändern; ein stehen bleibender

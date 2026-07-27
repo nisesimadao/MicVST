@@ -149,7 +149,7 @@ juce::StringArray AudioEngine::scanRoots() const
 {
     // JUCE-Default-Orte statt hartkodiertem Pfad: deckt neben Program Files auch
     // %LOCALAPPDATA%\Programs\Common\VST3 und die VST3_PATH-Umgebungsvariable ab.
-    juce::VST3PluginFormat vst3;
+    MicVST3Format vst3;
     juce::StringArray roots;
     const auto defaults = vst3.getDefaultLocationsToSearch();
     for (int i = 0; i < defaults.getNumPaths(); ++i)
@@ -161,7 +161,7 @@ juce::StringArray AudioEngine::scanRoots() const
 
 juce::StringArray AudioEngine::listVst3Files() const
 {
-    juce::VST3PluginFormat vst3;
+    MicVST3Format vst3;
     juce::FileSearchPath paths;
     for (auto& r : scanRoots())
         paths.add (juce::File (r));
@@ -179,7 +179,7 @@ void AudioEngine::startBackgroundScan (int timeoutMs)
 {
     if (isScanning()) { rescanQueued = true; return; }
 
-    juce::VST3PluginFormat vst3;
+    MicVST3Format vst3;
     auto files = filterFilesNeedingScan (listVst3Files(), knownPlugins, vst3, skippedPlugins);
     juce::Logger::writeToLog ("Scan: " + juce::String (files.size()) + " Datei(en) zu scannen");
     if (files.isEmpty())

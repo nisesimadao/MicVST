@@ -60,6 +60,26 @@ void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome);
 // (C:\Plugins darf nicht C:\Plugins2\... matchen); auf Windows case-insensitiv.
 bool pathIsInsideAnyFolder (const juce::String& path, const juce::StringArray& folders);
 
+// Maßgebliche Änderungszeit eines VST3-Pfads: für Einzeldateien die Datei-mtime; für
+// Bundle-ORDNER die neueste mtime der inneren *.vst3-Binaries (Contents\<arch>-win\...).
+// Grund: Companion-Dienste (UA Connect, Acustica Aquarius, Minimal Audio Stream, ...)
+// schreiben Logs/Content in die Bundles und bumpen die Ordner-mtime zwischen den App-
+// Starts -> Dauer-Rescan. Die Binary selbst ändert nur ein echtes Plugin-Update.
+// Ordner ohne innere .vst3-Datei: Fallback auf die Ordner-mtime.
+juce::Time effectiveModTime (const juce::File& vst3FileOrBundle);
+
+// VST3-Format mit bundle-robustem Rescan-Check (siehe effectiveModTime). Überall dort
+// verwenden, wo pluginNeedsRescanning/isListingUpToDate ins Spiel kommt.
+#if JUCE_PLUGINHOST_VST3
+struct MicVST3Format : juce::VST3PluginFormat
+{
+    bool pluginNeedsRescanning (const juce::PluginDescription& d) override
+    {
+        return effectiveModTime (juce::File (d.fileOrIdentifier)) != d.lastFileModTime;
+    }
+};
+#endif
+
 // Hintergrund-Thread um runScan herum; marshallt Callbacks auf den Message-Thread.
 // Besitzt den echten ChildProcess-Runner (oder einen injizierten für Tests).
 class ScanCoordinator : private juce::Thread

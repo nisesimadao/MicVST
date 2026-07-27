@@ -215,6 +215,26 @@ struct MergeScanResultsTest : juce::UnitTest
             expect (list.getTypeForFile ("C:/v/Other.vst3") != nullptr);
         }
 
+        beginTest ("bundle entries are restamped with the inner binary's mtime");
+        {
+            auto bdir  = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getNonexistentChildFile ("micvst_merge_bundle", ".vst3");
+            auto inner = bdir.getChildFile ("Contents").getChildFile ("x86_64-win")
+                             .getChildFile ("B.vst3");
+            inner.create();
+            inner.replaceWithText ("dll");
+            expect (inner.setLastModificationTime (juce::Time (5000000)));
+
+            juce::KnownPluginList list;
+            auto d = makeDesc ("Bundle", bdir.getFullPathName());
+            d.lastFileModTime = juce::Time (1);   // Kind-erfasste (Ordner-)Zeit, absichtlich falsch
+            ScanOutcome o; o.found.add (d);
+            mergeScanResults (list, o);
+            expect (list.getTypes()[0].lastFileModTime == juce::Time (5000000));
+
+            bdir.deleteRecursively();
+        }
+
         tmp.deleteFile();
     }
 };
@@ -290,3 +310,69 @@ struct PathScopeTest : juce::UnitTest
     }
 };
 static PathScopeTest pathScopeTest;
+
+struct EffectiveModTimeTest : juce::UnitTest
+{
+    EffectiveModTimeTest() : juce::UnitTest ("effectiveModTime") {}
+    void runTest() override
+    {
+        auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                      .getNonexistentChildFile ("micvst_emt", "");
+        dir.createDirectory();
+
+        beginTest ("plain file uses its own mtime");
+        {
+            auto f = dir.getChildFile ("Plain.vst3");
+            f.replaceWithText ("x");
+            expect (effectiveModTime (f) == f.getLastModificationTime());
+        }
+
+        // Bundle-Ordner mit innerer Binary (echtes VST3-Bundle-Layout).
+        auto bundle = dir.getChildFile ("Bundle.vst3");
+        auto inner  = bundle.getChildFile ("Contents").getChildFile ("x86_64-win")
+                            .getChildFile ("Bundle.vst3");
+        inner.create();
+        inner.replaceWithText ("dll");
+        expect (inner.setLastModificationTime (juce::Time (1000000)));
+
+        beginTest ("bundle dir uses the inner binary's mtime, service writes are ignored");
+        {
+            expect (effectiveModTime (bundle) == juce::Time (1000000));
+            // Companion-Dienst simulieren: Log direkt im Bundle bumpt die ORDNER-mtime.
+            bundle.getChildFile ("service.log").replaceWithText ("touched");
+            expect (effectiveModTime (bundle) == juce::Time (1000000));
+        }
+
+        beginTest ("newest inner binary wins (multi-arch bundle)");
+        {
+            auto arm = bundle.getChildFile ("Contents").getChildFile ("arm64-win")
+                             .getChildFile ("Bundle.vst3");
+            arm.create();
+            arm.replaceWithText ("dll");
+            expect (arm.setLastModificationTime (juce::Time (2000000)));
+            expect (effectiveModTime (bundle) == juce::Time (2000000));
+        }
+
+        beginTest ("dir without inner binaries falls back to dir mtime");
+        {
+            auto empty = dir.getChildFile ("Empty.vst3");
+            empty.createDirectory();
+            expect (effectiveModTime (empty) == empty.getLastModificationTime());
+        }
+
+        beginTest ("MicVST3Format: service write no rescan, binary update rescans");
+        {
+            MicVST3Format fmt;
+            juce::PluginDescription d;
+            d.fileOrIdentifier = bundle.getFullPathName();
+            d.lastFileModTime  = effectiveModTime (bundle);
+            bundle.getChildFile ("another.log").replaceWithText ("touched again");
+            expect (! fmt.pluginNeedsRescanning (d));
+            expect (inner.setLastModificationTime (juce::Time (3000000)));
+            expect (fmt.pluginNeedsRescanning (d));
+        }
+
+        dir.deleteRecursively();
+    }
+};
+static EffectiveModTimeTest effectiveModTimeTest;

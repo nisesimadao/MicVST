@@ -41,7 +41,7 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
                           : r.status == ScanProcessResult::Status::skippedByUser ? "skipped"
                                                                                  : "failed";
         out.skipped.add ({ file, reason,
-                           juce::File (file).getLastModificationTime().toMilliseconds() });
+                           effectiveModTime (juce::File (file)).toMilliseconds() });
     }
 
     out.completed = true;
@@ -71,7 +71,7 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
     for (int i = skipped.size(); --i >= 0;)
     {
         const juce::File f (skipped[i].file);
-        if (! f.exists() || f.getLastModificationTime().toMilliseconds() != skipped[i].fileTimeMs)
+        if (! f.exists() || effectiveModTime (f).toMilliseconds() != skipped[i].fileTimeMs)
         {
             juce::Logger::writeToLog ("Scan: Skip aufgehoben (Datei geändert/entfernt): " + skipped[i].file);
             skipped.remove (i);
@@ -89,9 +89,14 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
     {
         if (isSkipped (f) || list.isListingUpToDate (f, format))
             continue;
-        // Grund loggen: macht den Dauer-Rescan-Fall in log.txt remote diagnostizierbar.
+        // Grund + Zeitstempel loggen: macht den Dauer-Rescan-Fall in log.txt remote
+        // diagnostizierbar (cache = gespeicherte mtime, datei = aktuelle effectiveModTime).
+        juce::String detail;
+        if (auto t = list.getTypeForFile (f))
+            detail = " (cache=" + juce::String (t->lastFileModTime.toMilliseconds())
+                   + " datei=" + juce::String (effectiveModTime (juce::File (f)).toMilliseconds()) + ")";
         juce::Logger::writeToLog (juce::String ("Scan ")
-            + (list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f);
+            + (list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f + detail);
         out.add (f);
     }
     return out;
@@ -108,7 +113,7 @@ void mergeScanResults (juce::KnownPluginList& list, const ScanOutcome& outcome)
 
     for (auto d : outcome.found)   // Kopie: lastFileModTime wird neu gestempelt
     {
-        d.lastFileModTime = juce::File (d.fileOrIdentifier).getLastModificationTime();
+        d.lastFileModTime = effectiveModTime (juce::File (d.fileOrIdentifier));
         list.addType (d);
     }
 }
@@ -121,6 +126,17 @@ bool pathIsInsideAnyFolder (const juce::String& path, const juce::StringArray& f
             && (f == juce::File (folder) || f.isAChildOf (juce::File (folder))))
             return true;
     return false;
+}
+
+juce::Time effectiveModTime (const juce::File& vst3FileOrBundle)
+{
+    if (! vst3FileOrBundle.isDirectory())
+        return vst3FileOrBundle.getLastModificationTime();
+
+    juce::Time newest;
+    for (auto& inner : vst3FileOrBundle.findChildFiles (juce::File::findFiles, true, "*.vst3"))
+        newest = juce::jmax (newest, inner.getLastModificationTime());
+    return newest != juce::Time() ? newest : vst3FileOrBundle.getLastModificationTime();
 }
 
 // ============================ echter Kindprozess-Runner ============================

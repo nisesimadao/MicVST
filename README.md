@@ -73,8 +73,11 @@ boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed
   (window opens instantly) in isolated helper processes with a 120-second timeout - a plugin that
   crashes or hangs the scan is skipped (with a hint in the UI); you can skip the current plugin
   mid-scan or “Retry skipped plugins” (with a generous 10-minute timeout) for huge shell plugins
-  like Waves WaveShell. Results are cached, so later starts are instant. “Rescan all plugins”
-  (in the “Manage VST3 Folders” menu) starts fresh.
+  like Waves WaveShell. Results are cached, so later starts are instant. Plugins shipped as bundle
+  folders (Acustica, Minimal Audio, UADx, ...) are rescanned only when the plugin binary inside
+  the bundle changes, not when vendor background services write logs into it. “Reset app (clear all
+  data)...” (also in the “Manage VST3 Folders” menu) deletes all settings and the plugin cache for
+  a fresh start. “Rescan all plugins” (in the menu) starts fresh.
 - Persistent settings (`%APPDATA%\MicVST\config.xml`), low latency, silent **tray autostart**
 - Optional, **opt-in update check** (off by default): one request to the GitHub releases API on
   startup; no telemetry, no auto-installer

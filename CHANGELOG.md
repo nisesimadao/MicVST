@@ -4,6 +4,22 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-07-27
+
+### Added
+- "Reset app (clear all data)..." in the Manage VST3 Folders menu: deletes all settings
+  and the plugin cache, then closes MicVST for a fresh first-run setup.
+- Scan diagnostics: skip reasons now include the scanner's exit code where relevant
+  (e.g. "failed (exit 0xC0000005)"), and the scan log records why a file is rescanned.
+
+### Fixed
+- Plugins shipped as bundle folders (Acustica, Minimal Audio, UADx, ...) were rescanned
+  on every start when vendor background services wrote into their bundles - the rescan
+  check now tracks the plugin binary inside the bundle instead of the folder itself.
+- A plugin that crashes the scanner mid-enumeration (e.g. Waves WaveShell) no longer
+  loses everything: plugins found before the crash are kept and usable, and the file is
+  marked "crashed (N plugin(s) rescued)" - use "Retry skipped plugins" to try again.
+
 ## [1.1.0] - 2026-07-22
 
 ### Added
@@ -92,6 +108,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
+[1.1.1]: https://github.com/philipz794/MicVST/releases/tag/v1.1.1
 [1.1.0]: https://github.com/philipz794/MicVST/releases/tag/v1.1.0
 [1.0.3]: https://github.com/philipz794/MicVST/releases/tag/v1.0.3
 [1.0.2]: https://github.com/philipz794/MicVST/releases/tag/v1.0.2

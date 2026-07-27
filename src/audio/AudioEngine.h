@@ -48,6 +48,11 @@ public:
     std::function<void()> onStateChanged;
     void requestPersist() { if (onStateChanged) onStateChanged(); }
 
+    // Factory-Reset (UI-Menü): Die App löscht config + Plugin-Cache und beendet sich
+    // für einen frischen Erststart. Engine-seitig nur der Durchreich-Callback.
+    std::function<void()> onFactoryResetRequested;
+    void requestFactoryReset() { if (onFactoryResetRequested) onFactoryResetRequested(); }
+
     MicVSTDeviceManager&            getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph&      getGraph()         { return graph; }
     PluginChain&                    getChain()         { return *pluginChain; }

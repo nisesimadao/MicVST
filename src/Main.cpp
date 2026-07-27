@@ -165,6 +165,8 @@ public:
         // ein direktes saveState(captureState()) in der UI würde windowState/Update-Check resetten.
         engine->onStateChanged  = [this] { persistState(); };
 
+        engine->onFactoryResetRequested = [this] { factoryReset(); };
+
         // --- Auto-Update-Check verdrahten ---
         if (auto* mc = mainWindow->getContent())
         {
@@ -219,13 +221,28 @@ private:
     // Engine-Zustand (Geräte/Plugins) + Fenstergröße/-position + Update-Check-Zustand speichern.
     void persistState()
     {
-        if (engine == nullptr) return;
+        if (suppressPersist || engine == nullptr) return;
         auto s = engine->captureState();
         if (mainWindow != nullptr) s.windowState = mainWindow->getWindowStateAsString();
         s.updateCheckEnabled  = updateCheckEnabled;
         s.updateCheckAsked    = updateCheckAsked;
         s.lastNotifiedVersion = lastNotifiedVersion;
         saveState (s);
+    }
+
+    // "Reset app (clear all data)": Einstellungen + Plugin-Cache + Tray-Hinweis-Marker
+    // löschen und die App beenden. Kein Auto-Relaunch (Single-Instance-Logik würde die
+    // neue Instanz blocken); der Dialog kündigt den manuellen Neustart an. Der
+    // Autostart-Registry-Eintrag bleibt bewusst erhalten (sichtbare, eigene Einstellung).
+    void factoryReset()
+    {
+        suppressPersist = true;
+        configFile().deleteFile();
+        AudioEngine::pluginCacheFile().deleteFile();
+        juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("MicVST").getChildFile ("tray_hint_shown").deleteFile();
+        juce::Logger::writeToLog ("Factory-Reset: Daten gelöscht, App beendet sich");
+        systemRequestedQuit();
     }
 
     // Einmaliges Erststart-Popup: Zustimmung zum Update-Check einholen. Egal wie der Nutzer
@@ -311,6 +328,7 @@ private:
     bool updateCheckEnabled = false;
     bool updateCheckAsked   = false;
     juce::String lastNotifiedVersion;
+    bool suppressPersist = false;   // Factory-Reset: nichts darf die gelöschte Config neu anlegen
 };
 
 START_JUCE_APPLICATION (MicVSTApplication)

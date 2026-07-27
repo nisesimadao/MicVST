@@ -379,12 +379,30 @@ void PluginListView::showFolderMenu()
     m.addItem (retryItemId, "Retry skipped plugins",
                ! engine.isScanning() && ! engine.getSkippedPlugins().isEmpty());
 
+    constexpr int resetItemId = 5;
+    m.addSeparator();
+    m.addItem (resetItemId, "Reset app (clear all data)...");
+
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&manageFoldersBtn),
-        [this, rescanItemId, retryItemId] (int res)
+        [this, rescanItemId, retryItemId, resetItemId] (int res)
         {
             if (res == 1) { chooseFolder(); return; }
             if (res == rescanItemId) { engine.rescanAllPlugins(); updateScanUi(); return; }
             if (res == retryItemId) { engine.retrySkippedPlugins(); updateScanUi(); return; }
+            if (res == resetItemId)
+            {
+                juce::NativeMessageBox::showOkCancelBox (
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Reset MicVST",
+                    "Deletes all settings, the plugin cache and the plugin chain, then closes "
+                    "MicVST. Start it again for a first-run setup. Continue?",
+                    nullptr,
+                    juce::ModalCallbackFunction::create ([this] (int result)
+                    {
+                        if (result != 0) engine.requestFactoryReset();   // 0 = Cancel
+                    }));
+                return;
+            }
             if (res >= 1000)
             {
                 const auto& f = engine.getPluginFolders();

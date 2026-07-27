@@ -381,7 +381,10 @@ void PluginListView::showFolderMenu()
 
     constexpr int resetItemId = 5;
     m.addSeparator();
-    m.addItem (resetItemId, "Reset app (clear all data)...");
+    // Reset ist nur außerhalb eines Scans erlaubt, um zu verhindern, dass eine wartende
+    // scan-finished-Message die gerade gelöschte plugin_cache.xml neu anlegt.
+    // Da das Menü während eines Scans nicht eröffnet werden kann, gibt es keine wartende Message.
+    m.addItem (resetItemId, "Reset app (clear all data)...", ! engine.isScanning());
 
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&manageFoldersBtn),
         [this, rescanItemId, retryItemId, resetItemId] (int res)

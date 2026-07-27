@@ -13,6 +13,25 @@
  static constexpr unsigned int kSemFailCriticalErrors = 0x0001; // SEM_FAILCRITICALERRORS
  static constexpr unsigned int kSemNoGpFaultErrorBox  = 0x0002; // SEM_NOGPFAULTERRORBOX
  static constexpr unsigned int kSemNoOpenFileErrorBox  = 0x8000; // SEM_NOOPENFILEERRORBOX
+ #include <excpt.h>   // SEH-Intrinsics (_exception_code) — bewusst ohne <windows.h>
+
+// Enumeration mit SEH-Guard: Crasht eine Plugin-Klasse (WaveShell enthält hunderte),
+// stirbt nicht mehr der ganze Prozess — die bis dahin gefundenen Typen bleiben
+// nutzbar. Rückgabe 0 = sauber durchgelaufen, sonst der Exception-Code (NTSTATUS).
+static unsigned int findTypesWithSehGuard (juce::VST3PluginFormat& format,
+                                           juce::OwnedArray<juce::PluginDescription>& types,
+                                           const juce::String& path)
+{
+    __try
+    {
+        format.findAllTypesForFile (types, path);
+        return 0;
+    }
+    __except (1 /* EXCEPTION_EXECUTE_HANDLER */)
+    {
+        return (unsigned int) _exception_code();
+    }
+}
 #endif
 
 class MicVSTApplication : public juce::JUCEApplication
@@ -50,13 +69,22 @@ public:
 
         juce::VST3PluginFormat format;
         juce::OwnedArray<juce::PluginDescription> types;
+       #if JUCE_WINDOWS
+        const unsigned int crashCode = findTypesWithSehGuard (format, types, pluginPath);
+       #else
+        const unsigned int crashCode = 0;
         format.findAllTypesForFile (types, pluginPath);
-        if (types.isEmpty()) return 1;
+       #endif
+        if (crashCode == 0 && types.isEmpty()) return 1;
 
         juce::XmlElement root ("MicVSTScanResult");
+        if (crashCode != 0)
+            root.setAttribute ("crashCode",
+                               "0x" + juce::String::toHexString ((int) crashCode).toUpperCase());
         for (auto* t : types)
             root.addChildElement (t->createXml().release());
-        return root.writeTo (juce::File (outPath)) ? 0 : 1;
+        if (! root.writeTo (juce::File (outPath))) return 1;
+        return crashCode != 0 ? 3 : 0;
     }
 
     void initialise (const juce::String& commandLine) override

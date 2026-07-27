@@ -7,9 +7,12 @@
 // Ergebnis eines Kindprozess-Laufs für EINE .vst3-Datei.
 struct ScanProcessResult
 {
-    enum class Status { ok, failed, timeout, skippedByUser, aborted };
+    // partial = Kind crashte mitten in der Enumeration (Exit-Code 3), hat aber die bis
+    // dahin gefundenen Typen als XML gerettet (WaveShell & Co.: hunderte Klassen).
+    enum class Status { ok, failed, timeout, skippedByUser, aborted, partial };
     Status status = Status::failed;
-    juce::String resultXmlText;   // Inhalt der --out-Datei (nur bei ok)
+    juce::String resultXmlText;   // Inhalt der --out-Datei (bei ok und partial)
+    juce::uint32 exitCode = 0;    // roher Exit-Code des Kindes (Crash: NTSTATUS)
 };
 
 // Injizierbar für Tests. Die echte Implementierung startet "MicVST.exe --scan".
@@ -38,8 +41,10 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
                      std::function<bool()> shouldExit,
                      std::atomic<bool>* skipRequest = nullptr);
 
-// Parst die vom Kindmodus geschriebene Ergebnisdatei (<MicVSTScanResult> mit PLUGIN-Kindern).
-bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDescription>& out);
+// Parst die vom Kindmodus geschriebene Ergebnisdatei (<MicVSTScanResult> mit PLUGIN-
+// Kindern). crashCode != nullptr: erhält das Root-Attribut "crashCode" (leer wenn keins).
+bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDescription>& out,
+                         juce::String* crashCode = nullptr);
 
 // Welche Dateien müssen wirklich gescannt werden? Filtert Cache-Treffer und Skips heraus;
 // Skip-Einträge, deren Datei sich geändert hat (Update), werden dabei aus skipped entfernt.

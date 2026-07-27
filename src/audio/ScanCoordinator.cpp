@@ -26,6 +26,21 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
         if (r.status == ScanProcessResult::Status::aborted)
             return out;
 
+        if (r.status == ScanProcessResult::Status::partial)
+        {
+            // Crash mitten in der Shell-Enumeration: Gerettetes übernehmen, Datei mit
+            // aussagekräftigem Grund skippen (Retry versucht sie wie gehabt erneut).
+            juce::Array<juce::PluginDescription> descs;
+            juce::String crashCode;
+            parseScanResultXml (r.resultXmlText, descs, &crashCode);
+            out.found.addArray (descs);
+            out.skipped.add ({ file,
+                               "crashed (" + juce::String (descs.size()) + " plugin(s) rescued"
+                                   + (crashCode.isNotEmpty() ? ", " + crashCode : juce::String()) + ")",
+                               effectiveModTime (juce::File (file)).toMilliseconds() });
+            continue;
+        }
+
         if (r.status == ScanProcessResult::Status::ok)
         {
             juce::Array<juce::PluginDescription> descs;
@@ -37,9 +52,12 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
             r.status = ScanProcessResult::Status::failed;   // ok ohne brauchbares XML = failed
         }
 
-        const auto reason = r.status == ScanProcessResult::Status::timeout       ? "unresponsive"
-                          : r.status == ScanProcessResult::Status::skippedByUser ? "skipped"
-                                                                                 : "failed";
+        // Eigene Exit-Codes (0/1/2/3) sind kein Crash; alles darüber ist ein NTSTATUS.
+        const auto reason = r.status == ScanProcessResult::Status::timeout       ? juce::String ("unresponsive")
+                          : r.status == ScanProcessResult::Status::skippedByUser ? juce::String ("skipped")
+                          : r.exitCode > 3
+                              ? "failed (exit 0x" + juce::String::toHexString ((int) r.exitCode).toUpperCase() + ")"
+                              : juce::String ("failed");
         out.skipped.add ({ file, reason,
                            effectiveModTime (juce::File (file)).toMilliseconds() });
     }
@@ -48,10 +66,13 @@ ScanOutcome runScan (const juce::StringArray& files, ScanProcessRunner& runner, 
     return out;
 }
 
-bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDescription>& out)
+bool parseScanResultXml (const juce::String& xmlText, juce::Array<juce::PluginDescription>& out,
+                         juce::String* crashCode)
 {
     auto xml = juce::parseXML (xmlText);
     if (xml == nullptr || ! xml->hasTagName ("MicVSTScanResult")) return false;
+    if (crashCode != nullptr)
+        *crashCode = xml->getStringAttribute ("crashCode");
 
     bool any = false;
     for (auto* child : xml->getChildIterator())
@@ -175,9 +196,11 @@ namespace
             }
 
             ScanProcessResult r;
-            if (proc.getExitCode() == 0 && outFile.existsAsFile())
+            r.exitCode = proc.getExitCode();
+            if (outFile.existsAsFile() && (r.exitCode == 0 || r.exitCode == 3))
             {
-                r.status = ScanProcessResult::Status::ok;
+                r.status = r.exitCode == 0 ? ScanProcessResult::Status::ok
+                                           : ScanProcessResult::Status::partial;
                 r.resultXmlText = outFile.loadFileAsString();
             }
             outFile.deleteFile();

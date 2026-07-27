@@ -149,6 +149,48 @@ struct RunScanTest : juce::UnitTest
             expectEquals (out.skipped[0].file, juce::String ("C:/v/B.vst3"));
             expectEquals (out.skipped[0].reason, juce::String ("skipped"));
         }
+
+        beginTest ("partial: rescued types are kept, file skip-listed with crash reason");
+        {
+            FakeRunner r;
+            juce::XmlElement root ("MicVSTScanResult");
+            root.setAttribute ("crashCode", "0xC0000005");
+            root.addChildElement (makeDesc ("W1", "C:/v/Shell.vst3").createXml().release());
+            root.addChildElement (makeDesc ("W2", "C:/v/Shell.vst3").createXml().release());
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::partial;
+            pr.resultXmlText = root.toString();
+            pr.exitCode = 3;
+            r.results["C:/v/Shell.vst3"] = pr;
+
+            auto out = runScan ({ "C:/v/Shell.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.found.size(), 2);
+            expectEquals (out.skipped.size(), 1);
+            expectEquals (out.skipped[0].reason,
+                          juce::String ("crashed (2 plugin(s) rescued, 0xC0000005)"));
+        }
+
+        beginTest ("failed with crash exit code carries the code in the reason");
+        {
+            FakeRunner r;
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::failed;
+            pr.exitCode = 0xC0000005u;
+            r.results["C:/v/Dead.vst3"] = pr;
+            auto out = runScan ({ "C:/v/Dead.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.skipped[0].reason, juce::String ("failed (exit 0xC0000005)"));
+        }
+
+        beginTest ("plain failed (own exit codes) keeps the short reason");
+        {
+            FakeRunner r;
+            ScanProcessResult pr;
+            pr.status = ScanProcessResult::Status::failed;
+            pr.exitCode = 1;   // Kind: keine Typen gefunden -> kein Crash
+            r.results["C:/v/NotAPlugin.vst3"] = pr;
+            auto out = runScan ({ "C:/v/NotAPlugin.vst3" }, r, 1000, {}, [] { return false; });
+            expectEquals (out.skipped[0].reason, juce::String ("failed"));
+        }
     }
 };
 static RunScanTest runScanTest;
@@ -171,6 +213,16 @@ struct ParseScanResultTest : juce::UnitTest
             expect (! parseScanResultXml ("nope", out));
             expect (! parseScanResultXml ("<Wrong/>", out));
             expectEquals (out.size(), 0);
+        }
+        beginTest ("crashCode attribute is surfaced when requested");
+        {
+            juce::XmlElement root ("MicVSTScanResult");
+            root.setAttribute ("crashCode", "0xDEAD");
+            root.addChildElement (makeDesc ("Y", "C:/v/Y.vst3").createXml().release());
+            juce::Array<juce::PluginDescription> out;
+            juce::String code;
+            expect (parseScanResultXml (root.toString(), out, &code));
+            expectEquals (code, juce::String ("0xDEAD"));
         }
     }
 };

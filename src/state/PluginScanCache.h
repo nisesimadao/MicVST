@@ -6,7 +6,8 @@
 struct SkippedPlugin
 {
     juce::String file;      // voller Pfad der .vst3
-    juce::String reason;    // "unresponsive" | "failed"
+    juce::String reason;    // "unresponsive" | "skipped" | "failed" | "failed (exit 0x...)"
+                             // | "crashed (N plugin(s) rescued[, 0x...])"
     juce::int64  fileTimeMs = 0;
 };
 

@@ -32,6 +32,14 @@ Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreve
 [Icons]
 Name: "{autoprograms}\MicVST"; Filename: "{app}\{#MyAppExeName}"
 
+[Tasks]
+Name: "autostart"; Description: "Start MicVST with Windows (minimized to the system tray)"; GroupDescription: "Startup:"; Flags: unchecked
+
+[Registry]
+; Same value used by AutostartRegistry.cpp inside MicVST. --tray starts the engine
+; without opening the main window; the tray icon can restore it with a click.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MicVST"; ValueData: """{app}\{#MyAppExeName}"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
+
 [Run]
 ; VB-Audio explicitly permits the base VB-CABLE package to be bundled/silently
 ; installed with another application while its donationware identity remains visible.

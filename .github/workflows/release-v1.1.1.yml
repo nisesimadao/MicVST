@@ -7,37 +7,34 @@ on:
       - ".github/workflows/release-v1.1.1.yml"
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure
-        run: cmake -S . -B build -A x64
-
-      - name: Build
-        run: cmake --build build --config Release --target MicVST MicVSTTests
-
-      - name: Test
-        run: ./build/MicVSTTests_artefacts/Release/MicVSTTests.exe
-
-      - name: Install Inno Setup
+      - name: Download verified main build artifacts
         shell: powershell
-        run: choco install innosetup -y --no-progress
-
-      - name: Build installer
-        shell: powershell
-        run: ./installer/build-installer.ps1
-
-      - name: Prepare release assets
-        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item build/MicVST_artefacts/Release/MicVST.exe release/MicVST-portable.exe
-          Copy-Item installer/out/MicVST-Setup-1.1.1.exe release/MicVST-Setup-1.1.1.exe
+          New-Item -ItemType Directory -Force release/setup | Out-Null
+          New-Item -ItemType Directory -Force release/portable | Out-Null
+
+          # Main build 33506816883 already passed MSVC build, unit tests and Inno Setup
+          # for commit 8a8c27d, which contains the autostart checkbox.
+          gh run download 33506816883 -R $env:GITHUB_REPOSITORY -n MicVST-Setup -D release/setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh run download 33506816883 -R $env:GITHUB_REPOSITORY -n MicVST-portable -D release/portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $setup = Get-ChildItem release/setup -Recurse -Filter 'MicVST-Setup-*.exe' | Select-Object -First 1
+          $portable = Get-ChildItem release/portable -Recurse -Filter 'MicVST.exe' | Select-Object -First 1
+          if (-not $setup -or -not $portable) { throw 'Expected release executables were not found in build artifacts.' }
+
+          Copy-Item $setup.FullName release/MicVST-Setup-1.1.1.exe -Force
+          Copy-Item $portable.FullName release/MicVST-portable.exe -Force
 
           $assets = @(
             'release/MicVST-portable.exe',
@@ -55,7 +52,7 @@ jobs:
           Built-in voice effects + signed virtual microphone backend.
 
           Downloads:
-          - MicVST-Setup-1.1.1.exe — recommended one-click installer. Installs the official signed base VB-CABLE backend when it is missing, and offers an optional "Start MicVST with Windows" checkbox.
+          - MicVST-Setup-1.1.1.exe — recommended one-click installer. Installs the official signed base VB-CABLE backend when it is missing, and includes an optional "Start MicVST with Windows (minimized to the system tray)" checkbox.
           - MicVST-portable.exe — use this if VB-CABLE is already installed, or if you prefer a portable executable.
 
           Virtual microphone routing:
@@ -83,10 +80,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.1.1 `
-            release/MicVST-Setup-1.1.1.exe `
-            release/MicVST-portable.exe `
-            release/SHA256SUMS.txt `
-            --target $env:GITHUB_SHA `
-            --title 'MicVST v1.1.1' `
-            --notes-file release-notes.txt
+          cmd /c "gh release view v1.1.1 -R %GITHUB_REPOSITORY% >nul 2>nul"
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v1.1.1 -R $env:GITHUB_REPOSITORY `
+              release/MicVST-Setup-1.1.1.exe `
+              release/MicVST-portable.exe `
+              release/SHA256SUMS.txt `
+              --clobber
+          } else {
+            gh release create v1.1.1 -R $env:GITHUB_REPOSITORY `
+              release/MicVST-Setup-1.1.1.exe `
+              release/MicVST-portable.exe `
+              release/SHA256SUMS.txt `
+              --target 8a8c27d390b2c2e8436bc4255e177dc105bc9d49 `
+              --title 'MicVST v1.1.1' `
+              --notes-file release-notes.txt
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

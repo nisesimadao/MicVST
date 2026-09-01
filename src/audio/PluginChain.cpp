@@ -1,4 +1,5 @@
 #include "audio/PluginChain.h"
+#include "audio/BuiltinEffects.h"
 
 namespace
 {
@@ -126,6 +127,17 @@ void PluginChain::addStereoToMono()
     auto node = graph.addNode (std::make_unique<StereoToMonoProcessor>());
     if (node == nullptr) return;
     chain.push_back ({ node->nodeID, stereoToMonoId, false });
+}
+
+bool PluginChain::addBuiltIn (const juce::String& id)
+{
+    auto processor = BuiltinEffects::create (id);
+    if (processor == nullptr) return false;
+
+    auto node = graph.addNode (std::move (processor));
+    if (node == nullptr) return false;
+    chain.push_back ({ node->nodeID, id, false });
+    return true;
 }
 
 void PluginChain::removePlugin (int index)

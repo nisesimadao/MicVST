@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [ main, funfx-builtins ]
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
 

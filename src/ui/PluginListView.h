@@ -8,7 +8,7 @@
 //   - gemeldete Latenz des Plugins (getLatencySamples),
 //   - Bypass-Schalter,
 //   - Mülleimer-Icon zum Entfernen.
-// Oben ein "+ Plugin"-Button (öffnet den Such-Picker; enthält auch die Built-ins).
+// Oben ein "+ Effect / VST"-Button (öffnet den Such-Picker; enthält Built-ins + VST3).
 class PluginListView : public juce::Component, private juce::Timer
 {
 public:
@@ -21,7 +21,7 @@ private:
 
     void timerCallback() override;      // hält die angezeigte Plugin-Latenz aktuell
 
-    void showPluginPicker();            // "+ Plugin": Picker mit Suchfeld (CallOutBox)
+    void showPluginPicker();            // "+ Effect / VST": Picker mit Suchfeld (CallOutBox)
     void addFromPicker (const juce::PluginDescription&);
     void showFolderMenu();              // Custom-VST3-Ordner verwalten (hinzufügen/entfernen)
     void chooseFolder();                // VST3-Ordner per Dialog wählen + rescannen
@@ -78,7 +78,7 @@ private:
     juce::Label skipLabel;               // "N plugin(s) skipped - hover for details"
 
     AudioEngine& engine;
-    juce::TextButton addBtn { "+ Plugin" };
+    juce::TextButton addBtn { "+ Effect / VST" };
     juce::TextButton manageFoldersBtn { "Manage VST3 Folders" };
     juce::Viewport viewport;
     juce::Component rowsHolder;          // Inhalt des Viewports (trägt die Zeilen)

@@ -9,3 +9,11 @@ diff --git a/Source/Main/VirtualAudioDriver.inx b/Source/Main/VirtualAudioDriver
 -[VIRTUALAUDIODRIVER.NT$ARCH$.10.0...22000]
 +[VIRTUALAUDIODRIVER.NT$ARCH$.10.0]
  %VIRTUALAUDIODRIVER_SA.DeviceDesc%=VIRTUALAUDIODRIVER_SA, ROOT\MicVSTVirtualAudio
+@@ -160,7 +160,7 @@
+ ; WDF
+ ;======================================================
+ [VIRTUALAUDIODRIVER_SA.NT.Wdf]
+-KmdfService = VirtualAudioDriver, VIRTUALAUDIODRIVER_SA_WdfSect
++KmdfService = MicVSTVirtualAudio, VIRTUALAUDIODRIVER_SA_WdfSect
+ [VIRTUALAUDIODRIVER_SA_WdfSect]
+ KmdfLibraryVersion = $KMDFVERSION$

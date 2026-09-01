@@ -1,0 +1,11 @@
+diff --git a/Source/Main/VirtualAudioDriver.inx b/Source/Main/VirtualAudioDriver.inx
+--- a/Source/Main/VirtualAudioDriver.inx
++++ b/Source/Main/VirtualAudioDriver.inx
+@@ -20,10 +20,10 @@
+ [Manufacturer]
+-%MfgName%=VIRTUALAUDIODRIVER,NT$ARCH$.10.0...22000
++%MfgName%=VIRTUALAUDIODRIVER,NT$ARCH$.10.0
+ 
+-[VIRTUALAUDIODRIVER.NT$ARCH$.10.0...22000]
++[VIRTUALAUDIODRIVER.NT$ARCH$.10.0]
+ %VIRTUALAUDIODRIVER_SA.DeviceDesc%=VIRTUALAUDIODRIVER_SA, ROOT\MicVSTVirtualAudio

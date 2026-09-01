@@ -18,12 +18,11 @@ struct InfoIcon : juce::Component, juce::SettableTooltipClient
     }
 };
 
-// Kompakte Geräteauswahl: Input zuerst, dann Output (Output kennt "(none)").
+// Kompakte Geräteauswahl: Input ist frei wählbar; Output zeigt nur den von MicVST
+// automatisch verwalteten internen Treiber-Endpunkt und ist nicht editierbar.
 // Darunter optional eine Buffer-Zeile: nur sichtbar, wenn das Gerätepaar im
 // Low-Latency-Modus mehr als eine Buffer-Größe meldet ("Auto" = Geräte-Default).
 // Zuunterst eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).
-// Bewusst KEIN Input-Pegelmeter (oben gibt es den großen) und keine Kanal-Listen
-// (MicVST verwaltet die Kanäle selbst auf Stereo).
 class DevicePanel : public juce::Component,
                     private juce::ChangeListener,
                     private juce::Timer

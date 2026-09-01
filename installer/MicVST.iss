@@ -50,3 +50,14 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch MicVST"; Flags: nowait p
 ; VB-CABLE is intentionally NOT removed here. It is a shared third-party component
 ; and another application may be using it.
 Type: filesandordirs; Name: "{app}"
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  { The task checkbox is authoritative. This also handles an upgrade where the user
+    previously enabled startup from MicVST's tray menu but now unchecks it in Setup. }
+  if (CurStep = ssPostInstall) and (not WizardIsTaskSelected('autostart')) then
+    RegDeleteValue(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Run',
+      'MicVST');
+end;

@@ -58,6 +58,7 @@ target_sources(MicVST PRIVATE
     src/Main.cpp
     src/audio/AudioEngine.cpp
     src/audio/PluginChain.cpp
+    src/audio/BuiltinEffects.cpp
     src/ui/MainComponent.cpp
     src/ui/DevicePanel.cpp
     src/ui/PluginListView.cpp

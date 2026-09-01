@@ -52,8 +52,8 @@ jobs:
           Built-in voice effects + signed virtual microphone backend.
 
           Downloads:
-          - MicVST-Setup-1.1.1.exe — recommended one-click installer. Installs the official signed base VB-CABLE backend when it is missing, and includes an optional "Start MicVST with Windows (minimized to the system tray)" checkbox.
-          - MicVST-portable.exe — use this if VB-CABLE is already installed, or if you prefer a portable executable.
+          - MicVST-Setup-1.1.1.exe - recommended one-click installer. Installs the official signed base VB-CABLE backend when it is missing, and includes an optional "Start MicVST with Windows (minimized to the system tray)" checkbox.
+          - MicVST-portable.exe - use this if VB-CABLE is already installed, or if you prefer a portable executable.
 
           Virtual microphone routing:
           Physical Mic -> MicVST effects/VST3 -> CABLE Input -> CABLE Output -> Discord/OBS/Zoom/games
@@ -73,7 +73,7 @@ jobs:
           - Windows autostart uses --tray, so it starts silently in the tray.
 
           VB-CABLE is third-party donationware by VB-Audio Software and remains under VB-Audio's own terms.
-          '@ | Set-Content release-notes.txt -Encoding utf8
+          '@ | Set-Content release-notes.txt -Encoding ascii
 
       - name: Publish GitHub release
         shell: powershell
@@ -96,4 +96,7 @@ jobs:
               --title 'MicVST v1.1.1' `
               --notes-file release-notes.txt
           }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          gh release edit v1.1.1 -R $env:GITHUB_REPOSITORY --notes-file release-notes.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

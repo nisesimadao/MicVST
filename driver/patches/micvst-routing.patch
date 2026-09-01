@@ -1,0 +1,248 @@
+diff --git a/Source/Main/minwavertstream.cpp b/Source/Main/minwavertstream.cpp
+index a71aef3..1111111 100644
+--- a/Source/Main/minwavertstream.cpp
++++ b/Source/Main/minwavertstream.cpp
+@@ -6,6 +6,79 @@
+ #include "minwavert.h"
+ #include "minwavertstream.h"
+ #define MINWAVERTSTREAM_POOLTAG 'SRWM'
++
++// MicVST private render->capture bridge.
++//
++// The MicVST app renders its processed audio to the dedicated render endpoint.
++// This driver copies those WaveRT bytes into a bounded non-paged ring buffer and
++// the capture endpoint consumes the same bytes. Both endpoints are constrained
++// by the MicVST patch to 48 kHz / stereo / 32-bit PCM, so no kernel resampler is
++// required. On overflow we drop the oldest bytes to prevent latency growth; on
++// underflow the capture stream receives silence.
++namespace
++{
++    static constexpr ULONG MICVST_BRIDGE_CAPACITY = 64 * 1024;
++    static UCHAR g_MicVSTBridge[MICVST_BRIDGE_CAPACITY] = {};
++    static KSPIN_LOCK g_MicVSTBridgeLock;
++    static volatile LONG g_MicVSTBridgeInitState = 0;
++    static ULONG g_MicVSTBridgeRead = 0;
++    static ULONG g_MicVSTBridgeWrite = 0;
++    static ULONG g_MicVSTBridgeAvailable = 0;
++
++    static VOID MicVSTBridgeEnsureInitialized()
++    {
++        if (InterlockedCompareExchange(&g_MicVSTBridgeInitState, 1, 0) == 0)
++        {
++            KeInitializeSpinLock(&g_MicVSTBridgeLock);
++            g_MicVSTBridgeRead = 0;
++            g_MicVSTBridgeWrite = 0;
++            g_MicVSTBridgeAvailable = 0;
++            KeMemoryBarrier();
++            InterlockedExchange(&g_MicVSTBridgeInitState, 2);
++        }
++    }
++
++    static VOID MicVSTBridgeReset()
++    {
++        MicVSTBridgeEnsureInitialized();
++        if (InterlockedCompareExchange(&g_MicVSTBridgeInitState, 2, 2) != 2)
++            return;
++
++        KIRQL oldIrql;
++        KeAcquireSpinLock(&g_MicVSTBridgeLock, &oldIrql);
++        g_MicVSTBridgeRead = 0;
++        g_MicVSTBridgeWrite = 0;
++        g_MicVSTBridgeAvailable = 0;
++        KeReleaseSpinLock(&g_MicVSTBridgeLock, oldIrql);
++    }
++
++    static VOID MicVSTBridgePush(_In_reads_bytes_(bytes) const UCHAR* data, _In_ ULONG bytes)
++    {
++        MicVSTBridgeEnsureInitialized();
++        if (InterlockedCompareExchange(&g_MicVSTBridgeInitState, 2, 2) != 2 || data == NULL || bytes == 0)
++            return;
++
++        // If one update is larger than the ring, keep only the newest tail.
++        if (bytes >= MICVST_BRIDGE_CAPACITY)
++        {
++            data += bytes - MICVST_BRIDGE_CAPACITY;
++            bytes = MICVST_BRIDGE_CAPACITY;
++        }
++
++        KIRQL oldIrql;
++        KeAcquireSpinLock(&g_MicVSTBridgeLock, &oldIrql);
++
++        const ULONG freeBytes = MICVST_BRIDGE_CAPACITY - g_MicVSTBridgeAvailable;
++        if (bytes > freeBytes)
++        {
++            const ULONG drop = bytes - freeBytes;
++            g_MicVSTBridgeRead = (g_MicVSTBridgeRead + drop) % MICVST_BRIDGE_CAPACITY;
++            g_MicVSTBridgeAvailable -= drop;
++        }
++
++        const ULONG first = min(bytes, MICVST_BRIDGE_CAPACITY - g_MicVSTBridgeWrite);
++        RtlCopyMemory(g_MicVSTBridge + g_MicVSTBridgeWrite, data, first);
++        if (bytes > first)
++            RtlCopyMemory(g_MicVSTBridge, data + first, bytes - first);
++
++        g_MicVSTBridgeWrite = (g_MicVSTBridgeWrite + bytes) % MICVST_BRIDGE_CAPACITY;
++        g_MicVSTBridgeAvailable += bytes;
++        KeReleaseSpinLock(&g_MicVSTBridgeLock, oldIrql);
++    }
++
++    static VOID MicVSTBridgePull(_Out_writes_bytes_(bytes) UCHAR* dest, _In_ ULONG bytes)
++    {
++        MicVSTBridgeEnsureInitialized();
++        if (dest == NULL || bytes == 0)
++            return;
++
++        ULONG copied = 0;
++        if (InterlockedCompareExchange(&g_MicVSTBridgeInitState, 2, 2) == 2)
++        {
++            KIRQL oldIrql;
++            KeAcquireSpinLock(&g_MicVSTBridgeLock, &oldIrql);
++            copied = min(bytes, g_MicVSTBridgeAvailable);
++            const ULONG first = min(copied, MICVST_BRIDGE_CAPACITY - g_MicVSTBridgeRead);
++            if (first > 0)
++                RtlCopyMemory(dest, g_MicVSTBridge + g_MicVSTBridgeRead, first);
++            if (copied > first)
++                RtlCopyMemory(dest + first, g_MicVSTBridge, copied - first);
++            g_MicVSTBridgeRead = (g_MicVSTBridgeRead + copied) % MICVST_BRIDGE_CAPACITY;
++            g_MicVSTBridgeAvailable -= copied;
++            KeReleaseSpinLock(&g_MicVSTBridgeLock, oldIrql);
++        }
++
++        if (copied < bytes)
++            RtlZeroMemory(dest + copied, bytes - copied);
++    }
++}
+ 
+ #pragma warning (disable : 4127)
+@@ -1264,6 +1337,10 @@ NTSTATUS CMiniportWaveRTStream::SetState
+ 
+         case KSSTATE_RUN:
++            // A capture client may connect long after the MicVST render stream started.
++            // Discard stale buffered audio so a newly opened mic begins near real time.
++            if (m_bCapture)
++                MicVSTBridgeReset();
+             // Start DMA
+             LARGE_INTEGER ullPerfCounterTemp;
+             ullPerfCounterTemp = KeQueryPerformanceCounter(&m_ullPerformanceCounterFrequency);
+@@ -1379,11 +1456,8 @@ VOID CMiniportWaveRTStream::UpdatePosition
+             m_bLastBufferRendered = TRUE;
+         }
+ 
+-        if (!g_DoNotCreateDataFiles)
+-        {
+-            // Read from buffer and write to a file.
+-            ReadBytes(ByteDisplacement);
+-        }
++        // Always route rendered audio into the MicVST bridge. ReadBytes itself
++        // decides whether the optional debug wave-file writer is enabled.
++        ReadBytes(ByteDisplacement);
+     }
+@@ -1415,8 +1489,7 @@ VOID CMiniportWaveRTStream::WriteBytes
+     {
+         ULONG runWrite = min(ByteDisplacement, m_ulDmaBufferSize - bufferOffset);
+-        
+-        // Instead of generating a tone, just output silence
+-        RtlZeroMemory(m_pDmaBuffer + bufferOffset, runWrite);
++        MicVSTBridgePull(m_pDmaBuffer + bufferOffset, runWrite);
+            	
+         bufferOffset = (bufferOffset + runWrite) % m_ulDmaBufferSize;
+@@ -1448,7 +1521,10 @@ VOID CMiniportWaveRTStream::ReadBytes
+     while (ByteDisplacement > 0)
+     {
+         ULONG runWrite = min(ByteDisplacement, m_ulDmaBufferSize - bufferOffset);
+-        m_SaveData.WriteData(m_pDmaBuffer + bufferOffset, runWrite);
++        MicVSTBridgePush(m_pDmaBuffer + bufferOffset, runWrite);
++        if (!g_DoNotCreateDataFiles)
++            m_SaveData.WriteData(m_pDmaBuffer + bufferOffset, runWrite);
++
+         bufferOffset = (bufferOffset + runWrite) % m_ulDmaBufferSize;
+         ByteDisplacement -= runWrite;
+     }
+diff --git a/Source/Filters/speakerwavtable.h b/Source/Filters/speakerwavtable.h
+index 8bee6a4..2222222 100644
+--- a/Source/Filters/speakerwavtable.h
++++ b/Source/Filters/speakerwavtable.h
+@@ -22,15 +22,15 @@
+ // Change bits-per-sample range:
+ //
+-#define SPEAKER_HOST_MIN_BITS_PER_SAMPLE    16
+-#define SPEAKER_HOST_MAX_BITS_PER_SAMPLE    24
++#define SPEAKER_HOST_MIN_BITS_PER_SAMPLE    32
++#define SPEAKER_HOST_MAX_BITS_PER_SAMPLE    32
+ 
+ //
+ // Change sample-rate range:
+ //
+ #define SPEAKER_HOST_MIN_SAMPLE_RATE        48000
+-#define SPEAKER_HOST_MAX_SAMPLE_RATE        192000
++#define SPEAKER_HOST_MAX_SAMPLE_RATE        48000
+@@ -46,7 +46,7 @@ KSDATAFORMAT_WAVEFORMATEXTENSIBLE SpeakerHostPinSupportedDeviceFormats[] =
+-    // 0) 16-bit, Stereo, 48 kHz (DVD Quality)
++    // 0) 32-bit PCM, Stereo, 48 kHz (MicVST bridge format)
+@@ -65,11 +65,11 @@ KSDATAFORMAT_WAVEFORMATEXTENSIBLE SpeakerHostPinSupportedDeviceFormats[] =
+                 WAVE_FORMAT_EXTENSIBLE,                  // wFormatTag
+                 2,                                       // nChannels
+                 48000,                                   // nSamplesPerSec
+-                48000 * 2 * 16 / 8,                      // nAvgBytesPerSec
+-                2 * 16 / 8,                              // nBlockAlign
+-                16,                                      // wBitsPerSample
++                48000 * 2 * 32 / 8,                      // nAvgBytesPerSec
++                2 * 32 / 8,                              // nBlockAlign
++                32,                                      // wBitsPerSample
+                 sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)
+             },
+-            16,                                         // wValidBitsPerSample
++            32,                                         // wValidBitsPerSample
+             KSAUDIO_SPEAKER_STEREO,                     // dwChannelMask
+             STATICGUIDOF(KSDATAFORMAT_SUBTYPE_PCM)
+@@ -842,10 +842,10 @@ KSDATARANGE_AUDIO SpeakerPinDataRangesStream[] =
+-        8,      // MinimumBitsPerSample
+-        32,      // MaximumBitsPerSample
+-        8000,   // MinimumSampleFrequency (48 kHz)
+-        384000   // MaximumSampleFrequency (192 kHz)
++        32,      // MinimumBitsPerSample
++        32,      // MaximumBitsPerSample
++        48000,   // MinimumSampleFrequency
++        48000    // MaximumSampleFrequency
+     }
+ };
+diff --git a/Source/Main/VirtualAudioDriver.inx b/Source/Main/VirtualAudioDriver.inx
+index 0094a8f..3333333 100644
+--- a/Source/Main/VirtualAudioDriver.inx
++++ b/Source/Main/VirtualAudioDriver.inx
+@@ -23,7 +23,7 @@ PnpLockDown = 1
+ [VIRTUALAUDIODRIVER.NT$ARCH$.10.0...22000]
+-%VIRTUALAUDIODRIVER_SA.DeviceDesc%=VIRTUALAUDIODRIVER_SA, ROOT\VirtualAudioDriver
++%VIRTUALAUDIODRIVER_SA.DeviceDesc%=VIRTUALAUDIODRIVER_SA, ROOT\MicVSTVirtualAudio
+@@ -137,10 +137,10 @@ AddInterface=%KSCATEGORY_TOPOLOGY%, %KSNAME_TopologyMicArray1%, VIRTUALAUDIODRIV
+ [VIRTUALAUDIODRIVER_SA.NT.Services]
+-AddService=VirtualAudioDriver,0x00000002,VirtualAudioDriver_Service_Inst
++AddService=MicVSTVirtualAudio,0x00000002,VirtualAudioDriver_Service_Inst
+@@ -180,17 +180,17 @@ PKEY_AudioEndpoint_Supports_EventDriven_Mode = "{1DA5D803-D492-4EDD-8C23-E0C0FF
+ ;Localizable
+ 
+-ProviderName = "MikeTheTech"
+-MfgName      = "MikeTheTech"
+-MsCopyRight  = "MikeTheTech"
++ProviderName = "MicVST"
++MfgName      = "MicVST"
++MsCopyRight  = "MicVST / upstream contributors"
+ 
+-VIRTUALAUDIODRIVER_SA.DeviceDesc="Virtual Audio Driver by MTT"
+-VirtualAudioDriver.SvcDesc="Virtual Audio Driver by MTT"
++VIRTUALAUDIODRIVER_SA.DeviceDesc="MicVST Virtual Audio"
++VirtualAudioDriver.SvcDesc="MicVST Virtual Audio"
+ 
+ ;; friendly names
+-VIRTUALAUDIODRIVER.WaveSpeaker.szPname="Virtual Audio Driver by MTT"
+-VIRTUALAUDIODRIVER.TopologySpeaker.szPname="Virtual Audio Driver by MTT"
++VIRTUALAUDIODRIVER.WaveSpeaker.szPname="MicVST Internal Output"
++VIRTUALAUDIODRIVER.TopologySpeaker.szPname="MicVST Internal Output"
+ 
+-VIRTUALAUDIODRIVER.WaveMicArray1.szPname="Virtual Mic Driver by MTT"
+-VIRTUALAUDIODRIVER.TopologyMicArray1.szPname="Virtual Mic Driver by MTT"
++VIRTUALAUDIODRIVER.WaveMicArray1.szPname="MicVST Microphone"
++VIRTUALAUDIODRIVER.TopologyMicArray1.szPname="MicVST Microphone"
+ 
+-MicArray1CustomName= "Virtual Mic Driver by MTT"
++MicArray1CustomName= "MicVST Microphone"

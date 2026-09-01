@@ -1,0 +1,106 @@
+name: release v1.2.0
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/release-v1.2.0.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build app and tests
+        run: cmake --build build --config Release --target MicVST MicVSTTests
+
+      - name: Run unit tests
+        run: ./build/MicVSTTests_artefacts/Release/MicVSTTests.exe
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: powershell
+        run: ./installer/build-installer.ps1
+
+      - name: Prepare release assets
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item build/MicVST_artefacts/Release/MicVST.exe release/MicVST-portable.exe
+          Copy-Item installer/out/MicVST-Setup-1.2.0.exe release/MicVST-Setup-1.2.0.exe
+
+          $assets = @(
+            'release/MicVST-portable.exe',
+            'release/MicVST-Setup-1.2.0.exe'
+          )
+          $lines = foreach ($asset in $assets) {
+            $hash = Get-FileHash $asset -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $([IO.Path]::GetFileName($asset))"
+          }
+          $lines | Set-Content release/SHA256SUMS.txt -Encoding ascii
+
+          @'
+          MicVST v1.2.0
+
+          New built-in modulation and space effects:
+          - Wah / Auto Wah: envelope-following, LFO and manual modes
+          - Unison: 2-8 pitch-shifted voices with detune, stereo spread and stagger
+          - Chorus: modulated delay with feedback and stereo phase spread
+          - Delay: stereo / ping-pong modes with filtered feedback
+          - Reverb: room size, decay, pre-delay, damping and stereo width
+
+          Existing built-ins remain available:
+          - AutoTune
+          - Pitch Shift
+          - Deep Voice
+          - Robot
+          - Radio / Walkie-Talkie
+          - Bitcrusher
+
+          Downloads:
+          - MicVST-Setup-1.2.0.exe - recommended. Installs the official signed base VB-CABLE backend when it is missing and offers Windows tray autostart.
+          - MicVST-portable.exe - use this when VB-CABLE is already installed or when you prefer a portable executable.
+
+          Routing:
+          Physical Mic -> MicVST built-in DSP / VST3 -> CABLE Input -> CABLE Output -> Discord / OBS / Zoom / games
+
+          Notes:
+          - VoiceMeeter is not required.
+          - Secure Boot can remain enabled because the normal backend is the official signed VB-CABLE driver.
+          - The new DSP suite is covered by construction, stability, state round-trip, delay-tail and reverb-tail unit tests.
+          - VB-CABLE is third-party donationware by VB-Audio Software and remains under VB-Audio's own terms.
+          '@ | Set-Content release-notes.txt -Encoding ascii
+
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cmd /c "gh release view v1.2.0 -R %GITHUB_REPOSITORY% >nul 2>nul"
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v1.2.0 -R $env:GITHUB_REPOSITORY `
+              release/MicVST-Setup-1.2.0.exe `
+              release/MicVST-portable.exe `
+              release/SHA256SUMS.txt `
+              --clobber
+            gh release edit v1.2.0 -R $env:GITHUB_REPOSITORY --notes-file release-notes.txt
+          } else {
+            gh release create v1.2.0 -R $env:GITHUB_REPOSITORY `
+              release/MicVST-Setup-1.2.0.exe `
+              release/MicVST-portable.exe `
+              release/SHA256SUMS.txt `
+              --target $env:GITHUB_SHA `
+              --title 'MicVST v1.2.0' `
+              --notes-file release-notes.txt
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

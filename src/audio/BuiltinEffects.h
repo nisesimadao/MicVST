@@ -11,6 +11,11 @@ namespace BuiltinEffects
     static constexpr const char* bitcrusherId = "builtin:bitcrusher";
     static constexpr const char* pitchId      = "builtin:pitch";
     static constexpr const char* deepVoiceId  = "builtin:deepvoice";
+    static constexpr const char* wahId        = "builtin:wah";
+    static constexpr const char* unisonId     = "builtin:unison";
+    static constexpr const char* chorusId     = "builtin:chorus";
+    static constexpr const char* delayId      = "builtin:delay";
+    static constexpr const char* reverbId     = "builtin:reverb";
 
     bool isEffectId (const juce::String& id);
     juce::String displayName (const juce::String& id);

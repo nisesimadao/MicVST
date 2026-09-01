@@ -38,7 +38,7 @@ namespace
             "    update is found, the version number turns into a link to the download.";
     }
 
-    const char* const kRepoUrl = "https://github.com/philipz794/MicVST";
+    const char* const kRepoUrl = "https://github.com/nisesimadao/MicVST";
 
     // Inhalt des How-To-Fensters: Anleitungstext + klickbare Links (VB-Cable, GitHub).
     class HowToContent : public juce::Component

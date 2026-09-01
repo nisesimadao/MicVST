@@ -30,6 +30,9 @@ public:
     void addMonoToStereo();
     void addStereoToMono();
 
+    // Adds one of the built-in voice effects (builtin:autotune, builtin:robot, ...).
+    bool addBuiltIn (const juce::String& id);
+
     void removePlugin (int index);
     void movePlugin (int from, int to);
     void setBypass (int index, bool shouldBypass);

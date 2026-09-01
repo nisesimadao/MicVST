@@ -1,5 +1,6 @@
 #include "ui/PluginListView.h"
 #include "audio/PluginChain.h"
+#include "audio/BuiltinEffects.h"
 #include "ui/PluginPicker.h"
 
 // ============================ TrashButton ============================
@@ -94,9 +95,14 @@ void PluginListView::Row::paint (juce::Graphics& g)
         }
 
     // Name (auf den Platz links der Latenz-Spalte begrenzt).
-    const auto name = e.fileOrId == PluginChain::monoToStereoId ? juce::String ("Mono -> Stereo")
-                    : e.fileOrId == PluginChain::stereoToMonoId ? juce::String ("Stereo -> Mono")
-                    : juce::File (e.fileOrId).getFileNameWithoutExtension();
+    auto name = e.fileOrId == PluginChain::monoToStereoId ? juce::String ("Mono -> Stereo")
+              : e.fileOrId == PluginChain::stereoToMonoId ? juce::String ("Stereo -> Mono")
+              : juce::String();
+    if (name.isEmpty() && BuiltinEffects::isEffectId (e.fileOrId))
+        name = BuiltinEffects::displayName (e.fileOrId);
+    if (name.isEmpty())
+        name = juce::File (e.fileOrId).getFileNameWithoutExtension();
+
     g.setColour (e.bypassed ? juce::Colours::grey : juce::Colours::white);
     g.drawText (name, 28, 0, latLeft - 6 - 28, b.getHeight(), juce::Justification::centredLeft);
 
@@ -200,7 +206,7 @@ void PluginListView::resized()
     auto r = getLocalBounds();
     auto top = r.removeFromTop (30);
     constexpr int btnH = 26;   // einheitliche Button-Höhe (wie Row-/DevicePanel-Buttons)
-    addBtn.setBounds (top.removeFromLeft (110).withSizeKeepingCentre (106, btnH));
+    addBtn.setBounds (top.removeFromLeft (130).withSizeKeepingCentre (126, btnH));
     manageFoldersBtn.setBounds (top.removeFromRight (200).withSizeKeepingCentre (196, btnH));   // rechtsbündig
     r.removeFromTop (4);
 
@@ -224,7 +230,7 @@ void PluginListView::resized()
     const int vh = viewport.getHeight();
     const int contentH = rows.size() * rowH;
     // Scrollbar-Breite reservieren, wenn die Kette überläuft -> der Mülleimer am
-    // rechten Rand verschwindet nie hinter dem Scrollbalken.
+    // rechten Rand verschwindet nie hinter dem Scrollbalken。
     const int w = viewport.getWidth() - (contentH > vh ? viewport.getScrollBarThickness() : 0);
     rowsHolder.setSize (w, juce::jmax (vh, contentH));
     for (int i = 0; i < rows.size(); ++i)
@@ -256,8 +262,13 @@ void PluginListView::requestRemove (int index)
     const auto& es = engine.getChain().entries();
     if (! juce::isPositiveAndBelow (index, (int) es.size())) return;
     const auto& e = es[(size_t) index];
-    const auto name = e.isBuiltIn() ? juce::String ("Mono -> Stereo")
-                                    : juce::File (e.fileOrId).getFileNameWithoutExtension();
+    auto name = e.fileOrId == PluginChain::monoToStereoId ? juce::String ("Mono -> Stereo")
+              : e.fileOrId == PluginChain::stereoToMonoId ? juce::String ("Stereo -> Mono")
+              : juce::String();
+    if (name.isEmpty() && BuiltinEffects::isEffectId (e.fileOrId))
+        name = BuiltinEffects::displayName (e.fileOrId);
+    if (name.isEmpty())
+        name = juce::File (e.fileOrId).getFileNameWithoutExtension();
 
     // Sicherheitsabfrage. Der Dialog ist asynchron -> die auslösende Row bleibt am Leben,
     // bis OK gedrückt wird (das eigentliche Entfernen passiert erst im Callback).
@@ -310,6 +321,9 @@ void PluginListView::showPluginPicker()
     s2m.name = "Stereo -> Mono"; s2m.manufacturerName = "Built-in";
     s2m.fileOrIdentifier = PluginChain::stereoToMonoId;
     entries.add (s2m);
+
+    // Voice effects are first-class chain entries and persist exactly like VSTs.
+    entries.addArray (BuiltinEffects::descriptions());
     entries.addArray (engine.getKnownPlugins().getTypes());
 
     // SafePointer: die CallOutBox lebt auf dem Desktop und kann die View überleben.
@@ -334,6 +348,13 @@ void PluginListView::addFromPicker (const juce::PluginDescription& desc)
     {
         engine.getChain().addStereoToMono();
         commitChange();
+        return;
+    }
+
+    if (BuiltinEffects::isEffectId (desc.fileOrIdentifier))
+    {
+        if (engine.getChain().addBuiltIn (desc.fileOrIdentifier))
+            commitChange();
         return;
     }
 

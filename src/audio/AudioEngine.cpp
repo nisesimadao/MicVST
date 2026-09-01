@@ -339,11 +339,31 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
 
     for (auto& p : plugins)
     {
-        if (p.fileOrId == PluginChain::monoToStereoId || p.fileOrId == PluginChain::stereoToMonoId)
+        if (p.fileOrId.startsWith ("builtin:"))
         {
-            if (p.fileOrId == PluginChain::monoToStereoId) pluginChain->addMonoToStereo();
-            else                                           pluginChain->addStereoToMono();
-            pluginChain->setBypass ((int) pluginChain->entries().size() - 1, p.bypassed);
+            bool added = false;
+            if (p.fileOrId == PluginChain::monoToStereoId)
+            {
+                pluginChain->addMonoToStereo();
+                added = true;
+            }
+            else if (p.fileOrId == PluginChain::stereoToMonoId)
+            {
+                pluginChain->addStereoToMono();
+                added = true;
+            }
+            else
+            {
+                added = pluginChain->addBuiltIn (p.fileOrId);
+            }
+
+            if (added)
+            {
+                const int idx = (int) pluginChain->entries().size() - 1;
+                if (auto* node = graph.getNodeForId (pluginChain->entries()[(size_t) idx].node))
+                    node->getProcessor()->setStateInformation (p.state.getData(), (int) p.state.getSize());
+                pluginChain->setBypass (idx, p.bypassed);
+            }
             continue;
         }
 
@@ -387,7 +407,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                                     const juce::AudioIODeviceCallbackContext& context)
 {
     playHead.samples.fetch_add (numSamples, std::memory_order_relaxed);   // Transport voranschieben
-
     if (numInputChannels > 0)
     {
         juce::AudioBuffer<float> inView (const_cast<float* const*> (inputChannelData),

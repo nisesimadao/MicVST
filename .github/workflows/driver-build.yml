@@ -1,0 +1,47 @@
+name: build virtual microphone driver
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "driver/**"
+      - ".github/workflows/driver-build.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "driver/**"
+      - ".github/workflows/driver-build.yml"
+
+jobs:
+  driver-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Windows Driver Kit
+        shell: powershell
+        run: |
+          choco install windowsdriverkit11 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Prepare pinned upstream driver
+        shell: powershell
+        run: ./driver/prepare-driver.ps1
+
+      - name: Build x64 Release driver
+        shell: powershell
+        run: ./driver/build-driver.ps1 -Configuration Release -Platform x64 -SkipPrepare
+
+      - name: Upload driver package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MicVST-Virtual-Microphone-x64-unsigned
+          path: |
+            driver/work/Virtual-Audio-Driver/x64/Release/package/VirtualAudioDriver.sys
+            driver/work/Virtual-Audio-Driver/x64/Release/package/VirtualAudioDriver.inf
+            driver/work/Virtual-Audio-Driver/x64/Release/package/virtualaudiodriver.cat
+            driver/work/Virtual-Audio-Driver/LICENSE
+            driver/work/Virtual-Audio-Driver/THIRD_PARTY_NOTICES.md

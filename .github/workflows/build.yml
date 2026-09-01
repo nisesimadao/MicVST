@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Kein Generator gepinnt: windows-latest wechselt die VS-Version (aktuell VS2026);
+      # Kein Generator gepinnt: windows-latest wechselt die VS-Version;
       # CMake nimmt automatisch das installierte Visual Studio des Runner-Images.
       - name: Configure
         run: cmake -S . -B build -A x64
@@ -23,8 +23,22 @@ jobs:
       - name: Test
         run: ./build/MicVSTTests_artefacts/Release/MicVSTTests.exe
 
-      - name: Upload exe
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: powershell
+        run: ./installer/build-installer.ps1
+
+      - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
-          name: MicVST
+          name: MicVST-portable
           path: build/MicVST_artefacts/Release/MicVST.exe
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MicVST-Setup
+          path: installer/out/MicVST-Setup-*.exe

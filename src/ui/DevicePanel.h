@@ -19,7 +19,7 @@ struct InfoIcon : juce::Component, juce::SettableTooltipClient
 };
 
 // Kompakte Geräteauswahl: Input ist frei wählbar; Output zeigt nur den von MicVST
-// automatisch verwalteten internen Treiber-Endpunkt und ist nicht editierbar.
+// automatisch verwalteten VB-CABLE-Endpunkt (CABLE Input) und ist nicht editierbar.
 // Darunter optional eine Buffer-Zeile: nur sichtbar, wenn das Gerätepaar im
 // Low-Latency-Modus mehr als eine Buffer-Größe meldet ("Auto" = Geräte-Default).
 // Zuunterst eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).

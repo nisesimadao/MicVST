@@ -31,8 +31,8 @@ public:
     void setPreferredBufferSize (int samples) { preferredBufferSize = samples; }
     int  getPreferredBufferSize() const       { return preferredBufferSize; }
 
-    // Sucht ein installiertes virtuelles Audio-Kabel als Output (VB-Cable, VoiceMeeter, VAC),
-    // die Render->Capture selbst spiegeln. Leerer String = kein Kabel gefunden.
+    // Sucht ausschließlich den offiziellen VB-CABLE-Renderendpunkt ("CABLE Input").
+    // MicVST verwaltet diesen Output automatisch; leer = VB-CABLE nicht installiert.
     juce::String detectCableOutput();
 
     MicVSTState captureState();            // liest Devices + Plugin-Kette + Blobs
@@ -121,23 +121,24 @@ private:
     void audioDeviceStopped() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
-    MicVSTDeviceManager deviceManager;   // WASAPI Low-Latency bevorzugt, Shared als Fallback (siehe MicVSTDeviceManager)
+    juce::StringArray scanRoots() const;
+    juce::StringArray listVst3Files() const;
+    void handleScanFinished (const ScanOutcome&);
+    void pruneOutsideFolders();
+    void restoreChain (const juce::Array<PluginEntryState>&);
+
+    MicVSTDeviceManager deviceManager;
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer player;
     std::unique_ptr<PluginChain> pluginChain;
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
-    juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner (persistiert)
-    int preferredBufferSize = 0;   // Buffer-Wunsch des Users in Samples; 0 = Auto
-    LevelMeter inputMeter, outputMeter;
+    juce::StringArray pluginFolders;
+    juce::Array<SkippedPlugin> skippedPlugins;
+    std::unique_ptr<ScanCoordinator> scanner;
+    juce::Array<PluginEntryState> pendingPlugins;
+    bool rescanQueued = false;
+    int preferredBufferSize = 0;
 
-    std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
-    bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
-    juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
-    juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
-    juce::StringArray scanRoots() const;           // JUCE-Default-VST3-Orte + Custom-Ordner
-    juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
-    void restoreChain (const juce::Array<PluginEntryState>& plugins);
-    void handleScanFinished (const ScanOutcome&);
-    void pruneOutsideFolders();                    // Cache-Einträge entfernter Ordner löschen
+    LevelMeter inputMeter, outputMeter;
 };

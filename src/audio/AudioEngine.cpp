@@ -3,7 +3,7 @@ using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
 
 namespace
 {
-    constexpr const char* kMicVSTInternalOutput = "MicVST Internal Output";
+    constexpr const char* kVBCableRenderEndpoint = "CABLE Input";
 }
 
 AudioEngine::AudioEngine()
@@ -41,15 +41,16 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
 
 juce::String AudioEngine::detectCableOutput()
 {
-    // Dedicated MicVST render endpoint. Unlike the old VB-CABLE/VoiceMeeter path,
-    // this endpoint is owned by our driver and is never meant to be selected by the user.
+    // MicVST intentionally uses only the base VB-CABLE package. Do not fall back to
+    // VoiceMeeter/VAC or the experimental MicVST kernel driver: a predictable backend
+    // keeps setup simple and works on normal Secure-Boot Windows installations.
     deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
     {
         type->scanForDevices();
         const auto outs = type->getDeviceNames (false /* output */);
         for (auto& name : outs)
-            if (name.containsIgnoreCase (kMicVSTInternalOutput))
+            if (name.containsIgnoreCase (kVBCableRenderEndpoint))
                 return name;
     }
     return {};
@@ -317,14 +318,14 @@ void AudioEngine::applyState (const MicVSTState& s)
 {
     setPreferredBufferSize (s.bufferSize);
 
-    // Output is deliberately not user-persisted anymore. If our virtual driver is
-    // installed, route to its private render endpoint. If it is not installed, keep
-    // output empty rather than silently falling back to VB-CABLE/VoiceMeeter.
-    const auto internalOutput = detectCableOutput();
-    juce::Logger::writeToLog (internalOutput.isNotEmpty()
-        ? "MicVST driver output = " + internalOutput
-        : "MicVST virtual audio driver not found -> output 'none'");
-    initialise (s.inputDevice, internalOutput);
+    // Output is deliberately not user-persisted: MicVST always targets the base
+    // VB-CABLE render endpoint. If it is not installed, leave output empty and let
+    // the UI explain that the backend needs installation/reboot.
+    const auto cableOutput = detectCableOutput();
+    juce::Logger::writeToLog (cableOutput.isNotEmpty()
+        ? "VB-CABLE host output = " + cableOutput
+        : "VB-CABLE not found -> output 'none'");
+    initialise (s.inputDevice, cableOutput);
 
     // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.
     // Sonst bis Scan-Ende zurückstellen (captureState liefert solange pendingPlugins,

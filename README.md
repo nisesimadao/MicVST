@@ -1,153 +1,150 @@
 # MicVST
 
-**Run your microphone through a chain of VST3 plugins and use the result as a virtual microphone in any app.**
+**A lightweight Windows microphone effects rack with VST3 hosting, built-in voice effects, and a virtual microphone output.**
 
-MicVST is a lightweight Windows tray app. It takes one microphone, runs it through the VST3
-effects you choose (EQ, de-noise, compression, …) and sends the processed signal to a **virtual
-audio cable** - which any application (Discord, OBS, Zoom, Voicemod, games, …) can then use as a
-microphone input.
+MicVST captures your physical microphone, processes it through an ordered chain of built-in DSP and VST3 plugins, then sends the result to the signed **VB-CABLE** virtual audio driver.
 
-Think of it as a minimal alternative to VoiceMeeter / Wave Link when all you want is:
-*one input, plugins on it, out as a virtual mic.*
+```text
+Physical microphone
+        ↓
+      MicVST
+  AutoTune / Robot / Radio / Bitcrusher / Pitch / Deep Voice / VST3...
+        ↓
+CABLE Input  (VB-CABLE playback endpoint)
+        ↓
+CABLE Output (VB-CABLE recording endpoint)
+        ↓
+Discord / OBS / Zoom / browser / games
+```
 
-Mic → MicVST (your VST3 chain) → VB-Cable (CABLE Input → CABLE Output) → Discord...
+No VoiceMeeter is required. The normal MicVST installer manages the VB-CABLE backend automatically, so the only device you normally choose inside MicVST is your physical microphone.
 
+## Built-in effects
 
-![MicVST](assets/screenshot.png)
+MicVST includes first-class effects that live in the same reorderable rack as VST3 plugins:
 
----
+- **AutoTune** — key, scale, strength, retune speed and mix
+- **Robot** — carrier/ring-mod style voice effect
+- **Radio / Walkie-Talkie** — band limiting, crunch and static
+- **Bitcrusher** — bit depth and sample-rate reduction
+- **Pitch Shift** — ±12 semitones
+- **Deep Voice** — downward pitch shift with warmth control
+- **Mono → Stereo / Stereo → Mono** utility nodes
 
-## Download
+Built-ins support bypass, drag reorder, editor windows, and parameter persistence just like external VST3 effects.
 
-Grab the latest portable build - **no installer, no dependencies**, just run the `.exe`:
+## Recommended installation
 
-**[Download MicVST.exe](https://github.com/philipz794/MicVST/releases/latest/download/MicVST.exe)**
+Build or download `MicVST-Setup-*.exe` and run it as administrator.
 
-(Statically linked, x64. No Visual C++ Redistributable required. Tested on **Windows 11**;
-Windows 10 x64 should work as well - it uses no Windows-11-specific APIs - but is untested.
-Feedback welcome!)
+The setup installs MicVST and, when necessary, installs the official base VB-CABLE package in the background. The VB-CABLE package is downloaded directly from VB-Audio's server, its Authenticode signature is verified before execution, and the original driver is not modified or re-signed.
 
-The `.exe` is **not code-signed**, so Windows SmartScreen may warn *“Windows protected your
-PC”* - click **More info → Run anyway**. Each release lists the file’s **SHA-256** so you can
-verify your download (`Get-FileHash MicVST.exe -Algorithm SHA256` in PowerShell).
+A reboot may be required after the first VB-CABLE installation.
 
-You also need a **virtual audio cable**. The free **[VB-Cable](https://vb-audio.com/Cable/)** is
-recommended - MicVST detects it automatically. VoiceMeeter and Virtual Audio Cable work too.
+After that:
 
-## Setup
+1. Open MicVST and choose your **physical microphone**.
+2. Add/reorder built-in effects or VST3 plugins.
+3. In Discord / OBS / Zoom / your game, choose **CABLE Output** as the microphone.
 
-1. **Install [VB-Cable](https://vb-audio.com/Cable/)** and reboot. (If no cable is installed,
-   MicVST shows an orange hint with the download link.)
-2. **Run `MicVST.exe`.** On first start it picks your default microphone as input and the detected
-   virtual cable (e.g. *CABLE Input*) as output. Both are changeable in the audio setup and are
-   remembered across restarts.
-3. **Build your plugin chain** (bottom list, “+ Plugin”):
-   - “+ Plugin” opens a **searchable list** (grouped by manufacturer when empty) including all found
-     VST3 effects and built-in nodes (Mono → Stereo, Stereo → Mono); add any effects you like
-     (e.g. a noise-suppressor, EQ, compressor).
-   - optionally insert the built-in **Mono → Stereo** node at the point where you want stereo
-     (before it the chain runs mono = less CPU),
-   - drag rows by the **handle on the left** to reorder; the **trash icon on the right** removes a
-     plugin (with confirmation). Double-click a row to open the plugin’s editor.
-4. **In your target app** (Discord/OBS/Zoom/…), select **CABLE Output** as the microphone.
-5. Done. Device and plugin settings (including each plugin’s state) are saved automatically.
+MicVST automatically routes its processed output to **CABLE Input**. The output selector is intentionally read-only so there is no manual cable routing to configure.
 
-### Run in background (tray, autostart)
+## VB-CABLE notice
 
-Right-click the tray icon → **“Run at Windows startup”** to launch MicVST silently into the tray on
-boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed location first
-(e.g. `C:\Tools\MicVST\`) and enable autostart from there.
+VB-CABLE is made by **VB-Audio Software** and is separate third-party software. It is distributed as **donationware**; all contributions to VB-Audio are welcome.
+
+- Official site: https://vb-cable.com/
+- Licensing / distribution: https://vb-audio.com/Services/licensing.htm
+
+VB-Audio permits the base VB-CABLE package to be distributed/embedded with another application when its donationware model and identity remain visible. MicVST therefore ships `installer/VB-CABLE-NOTICE.txt` and shows that notice during setup.
+
+MicVST intentionally does **not** remove VB-CABLE when MicVST is uninstalled, because it is a shared third-party audio driver that another application may also use.
+
+## Portable build
+
+`MicVST.exe` can still be run as a portable application. In that case, install VB-CABLE separately first. If VB-CABLE is missing, MicVST leaves its output disconnected and shows `VB-CABLE missing / reboot required` rather than silently falling back to another driver.
 
 ## Features
 
-- One mic → ordered **VST3 plugin chain** → virtual cable output
-- **Automatic cable detection** (VB-Cable / VoiceMeeter / Virtual Audio Cable) with a download hint
-  when none is found
-- **Channel-aware routing** - the chain can start mono and switch to stereo at a placeable
-  **Mono → Stereo** node (so a mono noise-suppressor doesn’t cost double)
-- Horizontal **in/out level meters** with a dB scale
-- **Drag-to-reorder** plugin list, per-row bypass, remove with confirmation, per-plugin editor
-  windows
-- Scans all standard VST3 locations (Program Files, %LOCALAPPDATA%, VST3_PATH); **add custom
-  VST3 folders** via “Manage VST3 Folders → Add folder...” Scanning runs **in the background**
-  (window opens instantly) in isolated helper processes with a 120-second timeout - a plugin that
-  crashes or hangs the scan is skipped (with a hint in the UI); you can skip the current plugin
-  mid-scan or “Retry skipped plugins” (with a generous 10-minute timeout) for huge shell plugins
-  like Waves WaveShell. Results are cached, so later starts are instant. Plugins shipped as bundle
-  folders (Acustica, Minimal Audio, UADx, ...) are rescanned only when the plugin binary inside
-  the bundle changes, not when vendor background services write logs into it. “Reset app (clear all
-  data)...” (also in the “Manage VST3 Folders” menu) deletes all settings and the plugin cache.
-  “Rescan all plugins” (also in the “Manage VST3 Folders” menu) rebuilds the cache from scratch.
-- Persistent settings (`%APPDATA%\MicVST\config.xml`), low latency, silent **tray autostart**
-- Optional, **opt-in update check** (off by default): one request to the GitHub releases API on
-  startup; no telemetry, no auto-installer
-- Single portable `.exe`, no install, no runtime dependencies
+- Physical mic → ordered **built-in DSP + VST3 chain** → VB-CABLE virtual microphone
+- **Automatic VB-CABLE routing**; no VoiceMeeter configuration
+- Channel-aware graph with Mono → Stereo / Stereo → Mono nodes
+- Input/output level meters and live latency display
+- Drag-to-reorder rack, bypass, removal confirmation, plugin editors
+- Persistent plugin and built-in effect state
+- Standard + custom VST3 folder scanning
+- Out-of-process plugin scanning so broken VST3s cannot take down the main UI during discovery
+- Tray mode and optional Windows autostart
+- 48 kHz-oriented realtime voice processing
 
-## Build from source
+## Build the app
 
-Requires **Windows x64** (tested on Windows 11; Windows 10 should work but is untested) and
-**Visual Studio 2022** with the *Desktop development with C++* workload (MSVC + Windows SDK +
-CMake). JUCE is fetched automatically via CMake `FetchContent` (JUCE 8.0.13) - nothing else to
-install.
+Requires Windows x64, Visual Studio 2022 with Desktop development with C++, Windows SDK, CMake, and Git. JUCE 8.0.13 is fetched automatically by CMake.
 
 ```powershell
-$cmake = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-
-# Configure (fetches JUCE)
-& $cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-
-# Release build -> build\MicVST_artefacts\Release\MicVST.exe (self-contained, ~8 MB)
-& $cmake --build build --config Release --target MicVST
-
-# Optional: unit tests (exit code 0 = ok)
-& $cmake --build build --config Release --target MicVSTTests
+cmake -S . -B build -A x64
+cmake --build build --config Release --target MicVST MicVSTTests
 .\build\MicVSTTests_artefacts\Release\MicVSTTests.exe
 ```
 
-The build uses the static MSVC runtime (`/MT`), so the resulting `.exe` runs on any Windows 11 x64
-machine without the Visual C++ Redistributable (Windows 10 x64 should work too, but is untested).
+The application executable is generated at:
 
-## How it works
+```text
+build\MicVST_artefacts\Release\MicVST.exe
+```
 
-- An **AudioProcessorGraph** wires the input device → your plugin chain → the output device,
-  driven by JUCE’s `AudioDeviceManager` (WASAPI shared mode).
-- Per hop, `min(source.outs, target.ins)` channels are connected, so variable channel width
-  (the mono→stereo transition) is routed correctly and automatically.
-- The output device is just a normal render endpoint - pointing it at a virtual cable’s *input*
-  endpoint lets the cable’s driver loop the audio to its *output* (capture) endpoint, which other
-  apps read as a microphone. No special “output plugin” needed.
+## Build the installer
+
+Install Inno Setup 6, build the Release app first, then run:
+
+```powershell
+.\installer\build-installer.ps1
+```
+
+The installer is generated under:
+
+```text
+installer\out\MicVST-Setup-1.1.1.exe
+```
+
+The installer itself contains MicVST and the VB-CABLE bootstrap script/notice. The current base VB-CABLE ZIP is fetched from VB-Audio at install time, which avoids shipping a stale copy of the third-party driver.
+
+## How the audio path works
+
+MicVST uses JUCE `AudioDeviceManager` in WASAPI shared mode and an `AudioProcessorGraph`:
+
+```text
+WASAPI microphone input
+       ↓
+AudioProcessorGraph
+       ↓
+Built-in AudioProcessors + VST3 AudioPluginInstances
+       ↓
+WASAPI render to CABLE Input
+       ↓
+VB-CABLE signed kernel driver
+       ↓
+CABLE Output recording endpoint
+```
+
+The custom experimental MicVST driver work remains under `driver/` for future development, but the normal application does not depend on it. This keeps normal Windows security features such as Secure Boot available.
 
 ## Latency
 
-MicVST adds only the **smallest buffer necessary** to run your VST3 chain - typically one 10 ms block (480 samples at 48 kHz), the standard Windows shared-audio period. There's no extra buffering on top: audio comes in, goes through your plugins, and goes straight out.
+MicVST does not add a large user-space queue. The main contributors are the Windows input/output periods, plugin-reported latency, and VB-CABLE's own buffering. The UI shows a live estimate based on the active device and graph latency.
 
-A few things worth knowing:
+For voice chat the one-way delay is generally not noticeable to the speaker. Smaller buffers matter more when monitoring your own processed voice in real time.
 
-- **Buffer size**: in low-latency mode the device reports its supported sizes and a "Buffer" dropdown appears in the device panel ("Auto" = device default); otherwise Windows' shared engine period (typically 480 samples at 48 kHz = ~10 ms) is used directly. MicVST shows the buffer and live end-to-end latency under the device list.
-- **Total latency you hear is mostly downstream of MicVST.** The signal path is `Mic → MicVST → virtual cable → your app (Discord/OBS/…)`. The virtual cable and the receiving app each read through Windows shared audio too, and the cable has its own buffering. If you want to trim the cable's part, VB-Cable exposes a latency / internal-sample-rate setting in its own control panel (`VBCABLE_ControlPanel.exe`).
-- **For talking into Discord/OBS/Zoom, latency is inaudible** - your microphone signal travels one way to your listeners, so a few milliseconds never matter. (Low buffer sizes only matter when you monitor *yourself* live or play an instrument in real time, which isn't what MicVST is for.)
-- **ASIO / ASIO4All won't help here.** ASIO is built for a single exclusive in-and-out device and doesn't fit a mic-in / virtual-cable-out setup - and the receiving app would still read through shared audio anyway. MicVST is already on the most direct path Windows offers for this job.
+## Third-party software
 
-## Notes
-
-- **rnnoise** (noise suppression) is available as a VST3 here:
-  <https://github.com/werman/noise-suppression-for-voice/releases> - drop the `.vst3` into
-  `C:\Program Files\Common Files\VST3\` and restart. It runs at **48 kHz**; for low CPU use the
-  mono variant and place it before the built-in Mono → Stereo node.
-- Third-party software (JUCE, your VST3 plugins, VB-Cable, …) is subject to its own licenses. This
-  repository contains only the MicVST source.
+- **JUCE** — used for the application/audio/VST3 framework.
+- **VB-CABLE** — optional/shared third-party virtual audio driver used by the recommended MicVST setup. VB-CABLE remains under VB-Audio's own terms and donationware model.
+- External VST3 plugins remain under their respective licenses.
 
 ## License
 
-MicVST is free software licensed under the **GNU General Public License v3.0** - see
-[LICENSE](LICENSE). It uses **[JUCE](https://juce.com)**, whose free open-source tier is GPL, so
-MicVST is GPL too. Third-party software (JUCE, your VST3 plugins, VB-Cable, …) is subject to its own
-licenses; this repository contains only the MicVST source.
+MicVST is licensed under the **GNU General Public License v3.0**; see [LICENSE](LICENSE).
 
-```
-Copyright (C) 2026 Philip Zimmermann
-This program is free software: you can redistribute it and/or modify it under the terms of the
-GNU General Public License as published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; without
-even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-```
+The `driver/` experimental component has separate upstream/source licensing obligations documented in `driver/THIRD_PARTY_NOTICES.md`.
+
+VB-CABLE is **not** relicensed under GPL and is not part of MicVST source code. See `installer/VB-CABLE-NOTICE.txt`.

@@ -2,7 +2,7 @@
 
 namespace
 {
-    constexpr const char* kMicVSTInternalOutput = "MicVST Internal Output";
+    constexpr const char* kVBCableRenderEndpoint = "CABLE Input";
 }
 
 DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
@@ -14,12 +14,12 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     addAndMakeVisible (outLabel); addAndMakeVisible (outBox);
 
     inInfo.setTooltip ("Select your physical microphone here");
-    outInfo.setTooltip ("Managed automatically by MicVST. Discord/OBS/Zoom should use "
-                        "\"MicVST Microphone\" as their microphone input.");
+    outInfo.setTooltip ("Managed automatically by MicVST using VB-CABLE by VB-Audio (donationware). "
+                        "Discord/OBS/Zoom should use \"CABLE Output\" as their microphone input.");
     addAndMakeVisible (inInfo);
     addAndMakeVisible (outInfo);
 
-    // The dedicated render endpoint is an implementation detail, not a routing choice.
+    // VB-CABLE's render endpoint is an implementation detail, not a routing choice.
     outBox.setEnabled (false);
 
     bufInfo.setTooltip ("Buffer size in samples. Smaller = lower latency, higher CPU risk. "
@@ -74,15 +74,15 @@ void DevicePanel::refresh()
         const int si = ins.indexOf (setup.inputDeviceName);
         if (si >= 0) inBox.setSelectedId (si + 1, juce::dontSendNotification);
 
-        // Output is read-only: show only the effective MicVST routing state.
-        if (setup.outputDeviceName.containsIgnoreCase (kMicVSTInternalOutput))
+        // Output is read-only: show only the effective VB-CABLE routing state.
+        if (setup.outputDeviceName.containsIgnoreCase (kVBCableRenderEndpoint))
         {
             outBox.addItem (setup.outputDeviceName, 1);
             outBox.setSelectedId (1, juce::dontSendNotification);
         }
         else
         {
-            outBox.addItem ("MicVST driver not installed", 1);
+            outBox.addItem ("VB-CABLE backend not installed", 1);
             outBox.setSelectedId (1, juce::dontSendNotification);
         }
     }
@@ -126,7 +126,7 @@ void DevicePanel::updateStatus()
 {
     auto& dm = engine.getDeviceManager();
     const auto setup = dm.getAudioDeviceSetup();
-    const bool driverReady = setup.outputDeviceName.containsIgnoreCase (kMicVSTInternalOutput);
+    const bool driverReady = setup.outputDeviceName.containsIgnoreCase (kVBCableRenderEndpoint);
 
     juce::String st = engine.isRunning() ? juce::String ("Active")
                                          : juce::String ("Idle - device disconnected");
@@ -145,8 +145,8 @@ void DevicePanel::updateStatus()
         st << "   |   latency " << juce::String (lat, 1) << " ms";
     }
 
-    st << (driverReady ? "   |   virtual mic ready"
-                       : "   |   virtual mic driver missing");
+    st << (driverReady ? "   |   virtual mic: CABLE Output"
+                       : "   |   VB-CABLE missing / reboot required");
     statusLabel.setText (st, juce::dontSendNotification);
 }
 
@@ -176,8 +176,8 @@ void DevicePanel::apply()
     auto* curDev = dm.getCurrentAudioDevice();
     const int effective = buf > 0 ? buf : (curDev != nullptr ? curDev->getDefaultBufferSize() : 0);
 
-    // The output argument is intentionally ignored by AudioEngine: it always uses the
-    // dedicated MicVST Internal Output when the virtual driver is installed.
+    // The output argument is intentionally ignored by AudioEngine: it always uses
+    // VB-CABLE's CABLE Input endpoint when the backend is installed.
     engine.setDeviceConfig (input, {}, 0.0, effective);
 }
 

@@ -1,0 +1,25 @@
+VB-CABLE third-party notice
+===========================
+
+MicVST uses VB-CABLE as its virtual microphone transport on Windows.
+VB-CABLE is made by VB-Audio Software and is NOT part of MicVST.
+
+VB-CABLE is distributed by VB-Audio as donationware.
+If you find VB-CABLE useful, please consider supporting VB-Audio.
+
+Official site:
+https://vb-cable.com/
+
+Licensing / distribution terms:
+https://vb-audio.com/Services/licensing.htm
+
+MicVST does not rename, modify, or re-sign the VB-CABLE driver. The official
+VB-Audio package is downloaded from VB-Audio's own server and installed as-is.
+
+MicVST routes processed microphone audio to the playback endpoint named
+"CABLE Input". Applications such as Discord, OBS, Zoom, and browsers should use
+"CABLE Output" as the microphone input.
+
+MicVST intentionally leaves VB-CABLE installed when MicVST is uninstalled,
+because VB-CABLE is a shared third-party component that another application may
+also be using.

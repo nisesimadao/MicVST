@@ -83,15 +83,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = @(
-            'release/MicVST-Setup-1.1.1.exe',
-            'release/MicVST-portable.exe',
-            'release/SHA256SUMS.txt'
-          )
-
-          gh release view v1.1.1 *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.1.1 @assets --clobber
-          } else {
-            gh release create v1.1.1 @assets --target $env:GITHUB_SHA --title 'MicVST v1.1.1' --notes-file release-notes.txt
-          }
+          gh release create v1.1.1 `
+            release/MicVST-Setup-1.1.1.exe `
+            release/MicVST-portable.exe `
+            release/SHA256SUMS.txt `
+            --target $env:GITHUB_SHA `
+            --title 'MicVST v1.1.1' `
+            --notes-file release-notes.txt

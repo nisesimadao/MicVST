@@ -98,6 +98,46 @@ namespace
         juce::AudioProcessorValueTreeState state;
     };
 
+    class SimpleDelayLine
+    {
+    public:
+        void prepare (int maxDelaySamples)
+        {
+            data.assign ((size_t) juce::jmax (8, maxDelaySamples + 4), 0.0f);
+            writePos = 0;
+        }
+
+        void reset()
+        {
+            std::fill (data.begin(), data.end(), 0.0f);
+            writePos = 0;
+        }
+
+        float read (float delaySamples) const
+        {
+            if (data.empty()) return 0.0f;
+            delaySamples = juce::jlimit (1.0f, (float) data.size() - 2.0f, delaySamples);
+            float pos = (float) writePos - delaySamples;
+            while (pos < 0.0f) pos += (float) data.size();
+            while (pos >= (float) data.size()) pos -= (float) data.size();
+            const int i0 = (int) pos;
+            const int i1 = (i0 + 1) % (int) data.size();
+            const float frac = pos - (float) i0;
+            return data[(size_t) i0] + (data[(size_t) i1] - data[(size_t) i0]) * frac;
+        }
+
+        void push (float x)
+        {
+            if (data.empty()) return;
+            data[(size_t) writePos] = x;
+            writePos = (writePos + 1) % (int) data.size();
+        }
+
+    private:
+        std::vector<float> data;
+        int writePos = 0;
+    };
+
     // Lightweight dual-read-head time-domain pitch shifter. It is intentionally tuned for
     // voice-chat latency rather than mastering quality: ~11 ms at 48 kHz with the default window.
     class VoicePitchShifter
@@ -132,8 +172,6 @@ namespace
             if (channels <= 0 || samples <= 0) return;
 
             wet = juce::jlimit (0.0f, 1.0f, wet);
-            // A time-domain shifter needs moving delay taps. At exactly 0 st the correct
-            // result is the dry signal, so avoid needlessly smearing uncorrected speech.
             if (std::abs (semitones) < 0.01f || wet <= 0.0001f) return;
             const float ratio = std::pow (2.0f, semitones / 12.0f);
             const float phaseStep = (1.0f - ratio) / windowSamples;
@@ -302,8 +340,7 @@ namespace
     class AutoTuneProcessor final : public BuiltinProcessorBase
     {
     public:
-        AutoTuneProcessor()
-            : BuiltinProcessorBase ("AutoTune", makeLayout()) {}
+        AutoTuneProcessor() : BuiltinProcessorBase ("AutoTune", makeLayout()) {}
 
         static Layout makeLayout()
         {
@@ -559,14 +596,493 @@ namespace
         std::array<float, 2> held {};
     };
 
-    struct Definition { const char* id; const char* name; };
+    struct BiquadCoeffs
+    {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    };
+
+    struct BiquadState
+    {
+        float z1 = 0.0f, z2 = 0.0f;
+        void reset() { z1 = z2 = 0.0f; }
+        float process (float x, const BiquadCoeffs& c)
+        {
+            const float y = c.b0 * x + z1;
+            z1 = c.b1 * x - c.a1 * y + z2;
+            z2 = c.b2 * x - c.a2 * y;
+            return y;
+        }
+    };
+
+    BiquadCoeffs makeBandPass (float sampleRate, float frequency, float q)
+    {
+        frequency = juce::jlimit (40.0f, sampleRate * 0.45f, frequency);
+        q = juce::jlimit (0.25f, 12.0f, q);
+        const float w = juce::MathConstants<float>::twoPi * frequency / sampleRate;
+        const float s = std::sin (w);
+        const float c = std::cos (w);
+        const float alpha = s / (2.0f * q);
+        const float a0 = 1.0f + alpha;
+        BiquadCoeffs r;
+        r.b0 = alpha / a0;
+        r.b1 = 0.0f;
+        r.b2 = -alpha / a0;
+        r.a1 = (-2.0f * c) / a0;
+        r.a2 = (1.0f - alpha) / a0;
+        return r;
+    }
+
+    class WahProcessor final : public BuiltinProcessorBase
+    {
+    public:
+        WahProcessor() : BuiltinProcessorBase ("Wah / Auto Wah", makeLayout()) {}
+
+        static Layout makeLayout()
+        {
+            Layout l;
+            l.add (choiceParam ("mode", "Mode", { "Envelope", "LFO", "Manual" }, 0));
+            l.add (floatParam ("base", "Base frequency", 180.0f, 1400.0f, 10.0f, 320.0f, "Hz"));
+            l.add (floatParam ("range", "Sweep range", 200.0f, 3200.0f, 10.0f, 1800.0f, "Hz"));
+            l.add (floatParam ("resonance", "Resonance", 0.4f, 8.0f, 0.1f, 2.4f, "Q"));
+            l.add (floatParam ("rate", "LFO rate", 0.10f, 8.0f, 0.05f, 1.6f, "Hz"));
+            l.add (floatParam ("sensitivity", "Envelope sensitivity", 0.0f, 100.0f, 1.0f, 55.0f, "%"));
+            l.add (floatParam ("position", "Manual position", 0.0f, 100.0f, 1.0f, 50.0f, "%"));
+            l.add (floatParam ("mix", "Mix", 0.0f, 100.0f, 1.0f, 78.0f, "%"));
+            return l;
+        }
+
+        void prepareToPlay (double sr, int) override
+        {
+            sampleRate = (float) sr;
+            phase = 0.0f;
+            envelope = 0.0f;
+            for (auto& f : filters) f.reset();
+        }
+
+        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+        {
+            juce::ScopedNoDenormals n;
+            const int channels = juce::jmin (2, b.getNumChannels());
+            const int mode = juce::jlimit (0, 2, (int) std::lround (value ("mode")));
+            const float base = value ("base");
+            const float top = juce::jmin (sampleRate * 0.42f, base + value ("range"));
+            const float q = value ("resonance");
+            const float rate = value ("rate");
+            const float sensitivity = 0.5f + value ("sensitivity") * 0.075f;
+            const float manual = value ("position") * 0.01f;
+            const float mix = value ("mix") * 0.01f;
+            const float attack = std::exp (-1.0f / (sampleRate * 0.004f));
+            const float release = std::exp (-1.0f / (sampleRate * 0.100f));
+
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                float amp = 0.0f;
+                for (int ch = 0; ch < channels; ++ch)
+                    amp += std::abs (b.getSample (ch, i));
+                amp /= (float) juce::jmax (1, channels);
+                const float envCoeff = amp > envelope ? attack : release;
+                envelope = envCoeff * envelope + (1.0f - envCoeff) * amp;
+
+                float position = manual;
+                if (mode == 0)
+                    position = juce::jlimit (0.0f, 1.0f, envelope * sensitivity);
+                else if (mode == 1)
+                    position = 0.5f + 0.5f * std::sin (juce::MathConstants<float>::twoPi * phase);
+
+                const float ratio = juce::jmax (1.001f, top / juce::jmax (40.0f, base));
+                const float frequency = base * std::pow (ratio, position);
+                const auto coeffs = makeBandPass (sampleRate, frequency, q);
+
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    const float dry = b.getSample (ch, i);
+                    const float wet = std::tanh (filters[(size_t) ch].process (dry, coeffs) * 2.2f);
+                    b.setSample (ch, i, dry + (wet - dry) * mix);
+                }
+
+                phase += rate / sampleRate;
+                phase -= std::floor (phase);
+            }
+        }
+
+    private:
+        float sampleRate = 48000.0f;
+        float phase = 0.0f;
+        float envelope = 0.0f;
+        std::array<BiquadState, 2> filters;
+    };
+
+    class ChorusProcessor final : public BuiltinProcessorBase
+    {
+    public:
+        ChorusProcessor() : BuiltinProcessorBase ("Chorus", makeLayout()) {}
+
+        static Layout makeLayout()
+        {
+            Layout l;
+            l.add (floatParam ("rate", "Rate", 0.05f, 8.0f, 0.05f, 0.80f, "Hz"));
+            l.add (floatParam ("depth", "Depth", 0.0f, 15.0f, 0.1f, 5.0f, "ms"));
+            l.add (floatParam ("delay", "Base delay", 2.0f, 30.0f, 0.1f, 12.0f, "ms"));
+            l.add (floatParam ("feedback", "Feedback", 0.0f, 70.0f, 1.0f, 14.0f, "%"));
+            l.add (floatParam ("stereo", "Stereo", 0.0f, 100.0f, 1.0f, 100.0f, "%"));
+            l.add (floatParam ("mix", "Mix", 0.0f, 100.0f, 1.0f, 35.0f, "%"));
+            return l;
+        }
+
+        void prepareToPlay (double sr, int) override
+        {
+            sampleRate = (float) sr;
+            phase = 0.0f;
+            for (auto& d : delayLines) d.prepare ((int) std::ceil (sampleRate * 0.080f));
+        }
+
+        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+        {
+            juce::ScopedNoDenormals n;
+            const int channels = juce::jmin (2, b.getNumChannels());
+            const float rate = value ("rate");
+            const float depthMs = value ("depth");
+            const float baseMs = value ("delay");
+            const float feedback = value ("feedback") * 0.01f;
+            const float stereoPhase = juce::MathConstants<float>::pi * value ("stereo") * 0.01f;
+            const float mix = value ("mix") * 0.01f;
+
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    const float dry = b.getSample (ch, i);
+                    const float phaseOffset = ch == 1 ? stereoPhase : 0.0f;
+                    const float lfo = 0.5f + 0.5f * std::sin (juce::MathConstants<float>::twoPi * phase + phaseOffset);
+                    const float delaySamples = (baseMs + depthMs * lfo) * 0.001f * sampleRate;
+                    const float wet = delayLines[(size_t) ch].read (delaySamples);
+                    delayLines[(size_t) ch].push (dry + wet * feedback);
+                    b.setSample (ch, i, dry + (wet - dry) * mix);
+                }
+                phase += rate / sampleRate;
+                phase -= std::floor (phase);
+            }
+        }
+
+    private:
+        float sampleRate = 48000.0f;
+        float phase = 0.0f;
+        std::array<SimpleDelayLine, 2> delayLines;
+    };
+
+    class UnisonProcessor final : public BuiltinProcessorBase
+    {
+    public:
+        UnisonProcessor() : BuiltinProcessorBase ("Unison", makeLayout()) {}
+
+        static Layout makeLayout()
+        {
+            Layout l;
+            l.add (floatParam ("voices", "Voices", 2.0f, 8.0f, 1.0f, 4.0f));
+            l.add (floatParam ("detune", "Detune", 0.0f, 40.0f, 0.5f, 12.0f, "cent"));
+            l.add (floatParam ("spread", "Stereo spread", 0.0f, 100.0f, 1.0f, 75.0f, "%"));
+            l.add (floatParam ("delay", "Voice stagger", 0.0f, 30.0f, 0.5f, 9.0f, "ms"));
+            l.add (floatParam ("mix", "Mix", 0.0f, 100.0f, 1.0f, 60.0f, "%"));
+            return l;
+        }
+
+        void prepareToPlay (double sr, int samplesPerBlock) override
+        {
+            sampleRate = (float) sr;
+            channels = juce::jlimit (1, 2, getTotalNumOutputChannels());
+            for (auto& s : shifters) s.prepare (sr, channels);
+            pitchLatency = shifters[0].latencySamples();
+            for (auto& voice : voiceDelay)
+                for (auto& d : voice)
+                    d.prepare ((int) std::ceil (sampleRate * 0.080f) + pitchLatency + 8);
+            temp.setSize (channels, juce::jmax (64, samplesPerBlock), false, false, true);
+            wet.setSize (channels, juce::jmax (64, samplesPerBlock), false, false, true);
+            lastVoices = -1;
+            setLatencySamples (pitchLatency);
+        }
+
+        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+        {
+            juce::ScopedNoDenormals n;
+            const int activeChannels = juce::jmin (channels, b.getNumChannels());
+            if (activeChannels <= 0) return;
+            const int voices = juce::jlimit (2, 8, (int) std::lround (value ("voices")));
+            if (voices != lastVoices)
+            {
+                for (auto& s : shifters) s.reset();
+                for (auto& voice : voiceDelay) for (auto& d : voice) d.reset();
+                lastVoices = voices;
+            }
+
+            if (temp.getNumSamples() < b.getNumSamples())
+            {
+                temp.setSize (channels, b.getNumSamples(), false, false, true);
+                wet.setSize (channels, b.getNumSamples(), false, false, true);
+            }
+            wet.clear();
+
+            const float detuneSemitones = value ("detune") * 0.01f;
+            const float spread = value ("spread") * 0.01f;
+            const float staggerMs = value ("delay");
+
+            for (int v = 0; v < voices; ++v)
+            {
+                temp.makeCopyOf (b, true);
+                const float position = voices <= 1 ? 0.0f
+                    : ((float) v / (float) (voices - 1)) * 2.0f - 1.0f;
+                const float semitones = position * detuneSemitones;
+                const bool centreVoice = std::abs (semitones) < 0.01f;
+                if (! centreVoice)
+                    shifters[(size_t) v].process (temp, semitones, 1.0f);
+
+                const float voiceDelaySamples = ((float) v / (float) juce::jmax (1, voices - 1))
+                                              * staggerMs * 0.001f * sampleRate
+                                              + (centreVoice ? (float) pitchLatency : 0.0f);
+                const float pan = position * spread;
+                const float gainL = std::sqrt (juce::jmax (0.0f, 1.0f - pan));
+                const float gainR = std::sqrt (juce::jmax (0.0f, 1.0f + pan));
+
+                for (int ch = 0; ch < activeChannels; ++ch)
+                {
+                    const float panGain = activeChannels == 1 ? 1.0f : (ch == 0 ? gainL : gainR);
+                    auto* dst = wet.getWritePointer (ch);
+                    const auto* src = temp.getReadPointer (ch);
+                    auto& line = voiceDelay[(size_t) v][(size_t) ch];
+                    for (int i = 0; i < b.getNumSamples(); ++i)
+                    {
+                        float sample = src[i];
+                        if (voiceDelaySamples >= 1.0f)
+                        {
+                            const float delayed = line.read (voiceDelaySamples);
+                            line.push (sample);
+                            sample = delayed;
+                        }
+                        else
+                        {
+                            line.push (sample);
+                        }
+                        dst[i] += sample * panGain / (float) voices;
+                    }
+                }
+            }
+
+            const float mix = value ("mix") * 0.01f;
+            for (int ch = 0; ch < activeChannels; ++ch)
+            {
+                auto* out = b.getWritePointer (ch);
+                const auto* w = wet.getReadPointer (ch);
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    out[i] += (w[i] - out[i]) * mix;
+            }
+        }
+
+    private:
+        float sampleRate = 48000.0f;
+        int channels = 2;
+        int pitchLatency = 0;
+        int lastVoices = -1;
+        std::array<VoicePitchShifter, 8> shifters;
+        std::array<std::array<SimpleDelayLine, 2>, 8> voiceDelay;
+        juce::AudioBuffer<float> temp, wet;
+    };
+
+    class DelayProcessor final : public BuiltinProcessorBase
+    {
+    public:
+        DelayProcessor() : BuiltinProcessorBase ("Delay", makeLayout()) {}
+        double getTailLengthSeconds() const override { return 12.0; }
+
+        static Layout makeLayout()
+        {
+            Layout l;
+            l.add (floatParam ("time", "Time", 20.0f, 1500.0f, 1.0f, 280.0f, "ms"));
+            l.add (floatParam ("feedback", "Feedback", 0.0f, 90.0f, 1.0f, 32.0f, "%"));
+            l.add (choiceParam ("mode", "Mode", { "Stereo", "Ping-Pong" }, 0));
+            l.add (floatParam ("lowcut", "Feedback low cut", 20.0f, 1200.0f, 10.0f, 120.0f, "Hz"));
+            l.add (floatParam ("highcut", "Feedback high cut", 1000.0f, 20000.0f, 100.0f, 9000.0f, "Hz"));
+            l.add (floatParam ("mix", "Mix", 0.0f, 100.0f, 1.0f, 28.0f, "%"));
+            return l;
+        }
+
+        void prepareToPlay (double sr, int) override
+        {
+            sampleRate = (float) sr;
+            for (auto& d : delayLines) d.prepare ((int) std::ceil (sampleRate * 1.60f));
+            hpY.fill (0.0f); hpX.fill (0.0f); lpY.fill (0.0f);
+        }
+
+        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+        {
+            juce::ScopedNoDenormals n;
+            const int channels = juce::jmin (2, b.getNumChannels());
+            if (channels <= 0) return;
+            const float delaySamples = value ("time") * 0.001f * sampleRate;
+            const float feedback = value ("feedback") * 0.01f;
+            const bool pingPong = (int) std::lround (value ("mode")) == 1 && channels > 1;
+            const float mix = value ("mix") * 0.01f;
+            const float dt = 1.0f / sampleRate;
+            const float hpRC = 1.0f / (juce::MathConstants<float>::twoPi * value ("lowcut"));
+            const float hpA = hpRC / (hpRC + dt);
+            const float lpA = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * value ("highcut") / sampleRate);
+
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                std::array<float, 2> dry { 0.0f, 0.0f }, delayed { 0.0f, 0.0f };
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    dry[(size_t) ch] = b.getSample (ch, i);
+                    delayed[(size_t) ch] = delayLines[(size_t) ch].read (delaySamples);
+                }
+
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    const int source = pingPong ? 1 - ch : ch;
+                    const float fbIn = delayed[(size_t) source];
+                    float hy = hpA * (hpY[(size_t) ch] + fbIn - hpX[(size_t) ch]);
+                    hpX[(size_t) ch] = fbIn;
+                    hpY[(size_t) ch] = hy;
+                    lpY[(size_t) ch] += lpA * (hy - lpY[(size_t) ch]);
+                    delayLines[(size_t) ch].push (dry[(size_t) ch] + lpY[(size_t) ch] * feedback);
+                    b.setSample (ch, i, dry[(size_t) ch] + (delayed[(size_t) ch] - dry[(size_t) ch]) * mix);
+                }
+            }
+        }
+
+    private:
+        float sampleRate = 48000.0f;
+        std::array<SimpleDelayLine, 2> delayLines;
+        std::array<float, 2> hpY {}, hpX {}, lpY {};
+    };
+
+    class ReverbProcessor final : public BuiltinProcessorBase
+    {
+    public:
+        ReverbProcessor() : BuiltinProcessorBase ("Reverb", makeLayout()) {}
+        double getTailLengthSeconds() const override { return 10.0; }
+
+        static Layout makeLayout()
+        {
+            Layout l;
+            l.add (floatParam ("size", "Room size", 0.0f, 100.0f, 1.0f, 55.0f, "%"));
+            l.add (floatParam ("decay", "Decay", 0.20f, 8.0f, 0.05f, 1.8f, "s"));
+            l.add (floatParam ("predelay", "Pre-delay", 0.0f, 120.0f, 1.0f, 18.0f, "ms"));
+            l.add (floatParam ("damping", "Damping", 0.0f, 100.0f, 1.0f, 45.0f, "%"));
+            l.add (floatParam ("width", "Stereo width", 0.0f, 100.0f, 1.0f, 85.0f, "%"));
+            l.add (floatParam ("mix", "Mix", 0.0f, 100.0f, 1.0f, 22.0f, "%"));
+            return l;
+        }
+
+        void prepareToPlay (double sr, int) override
+        {
+            sampleRate = (float) sr;
+            const int combMax = (int) std::ceil (sampleRate * 0.16f);
+            const int allpassMax = (int) std::ceil (sampleRate * 0.07f);
+            for (auto& channel : combs) for (auto& d : channel) d.prepare (combMax);
+            for (auto& channel : allpasses) for (auto& d : channel) d.prepare (allpassMax);
+            for (auto& d : preDelay) d.prepare ((int) std::ceil (sampleRate * 0.13f));
+            for (auto& channel : dampState) channel.fill (0.0f);
+        }
+
+        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+        {
+            juce::ScopedNoDenormals n;
+            const int channels = juce::jmin (2, b.getNumChannels());
+            if (channels <= 0) return;
+            const float sizeScale = 0.72f + value ("size") * 0.0088f;
+            const float decay = value ("decay");
+            const float preDelaySamples = value ("predelay") * 0.001f * sampleRate;
+            const float damping = value ("damping") * 0.01f;
+            const float dampingCutoff = 18000.0f - damping * 15500.0f;
+            const float dampA = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * dampingCutoff / sampleRate);
+            const float width = value ("width") * 0.01f;
+            const float mix = value ("mix") * 0.01f;
+            const float srScale = sampleRate / 44100.0f;
+
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                std::array<float, 2> dry { 0.0f, 0.0f }, wetSample { 0.0f, 0.0f };
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    dry[(size_t) ch] = b.getSample (ch, i);
+                    float input = dry[(size_t) ch];
+                    if (preDelaySamples >= 1.0f)
+                    {
+                        input = preDelay[(size_t) ch].read (preDelaySamples);
+                        preDelay[(size_t) ch].push (dry[(size_t) ch]);
+                    }
+                    else
+                    {
+                        preDelay[(size_t) ch].push (dry[(size_t) ch]);
+                    }
+
+                    float sum = 0.0f;
+                    for (int c = 0; c < numCombs; ++c)
+                    {
+                        const float delaySamples = ((float) combBase[(size_t) c] * srScale * sizeScale)
+                            + (ch == 1 ? (float) combRightOffset[(size_t) c] * srScale : 0.0f);
+                        const float y = combs[(size_t) ch][(size_t) c].read (delaySamples);
+                        auto& damp = dampState[(size_t) ch][(size_t) c];
+                        damp += dampA * (y - damp);
+                        const float delaySeconds = delaySamples / sampleRate;
+                        const float feedback = std::pow (0.001f, delaySeconds / juce::jmax (0.05f, decay));
+                        combs[(size_t) ch][(size_t) c].push (input + damp * feedback);
+                        sum += y;
+                    }
+
+                    float x = sum * 0.25f;
+                    for (int a = 0; a < numAllpasses; ++a)
+                    {
+                        const float delaySamples = ((float) allpassBase[(size_t) a] * srScale * sizeScale)
+                            + (ch == 1 ? 17.0f * (float) (a + 1) * srScale : 0.0f);
+                        const float d = allpasses[(size_t) ch][(size_t) a].read (delaySamples);
+                        constexpr float g = 0.55f;
+                        const float y = d - g * x;
+                        allpasses[(size_t) ch][(size_t) a].push (x + g * d);
+                        x = y;
+                    }
+                    wetSample[(size_t) ch] = x * 0.72f;
+                }
+
+                if (channels > 1)
+                {
+                    const float mid = 0.5f * (wetSample[0] + wetSample[1]);
+                    const float side = 0.5f * (wetSample[0] - wetSample[1]) * width;
+                    wetSample[0] = mid + side;
+                    wetSample[1] = mid - side;
+                }
+
+                for (int ch = 0; ch < channels; ++ch)
+                    b.setSample (ch, i, dry[(size_t) ch] + (wetSample[(size_t) ch] - dry[(size_t) ch]) * mix);
+            }
+        }
+
+    private:
+        static constexpr int numCombs = 4;
+        static constexpr int numAllpasses = 2;
+        static constexpr std::array<int, numCombs> combBase { 1116, 1188, 1277, 1356 };
+        static constexpr std::array<int, numCombs> combRightOffset { 23, 31, 43, 53 };
+        static constexpr std::array<int, numAllpasses> allpassBase { 225, 556 };
+
+        float sampleRate = 48000.0f;
+        std::array<std::array<SimpleDelayLine, numCombs>, 2> combs;
+        std::array<std::array<SimpleDelayLine, numAllpasses>, 2> allpasses;
+        std::array<SimpleDelayLine, 2> preDelay;
+        std::array<std::array<float, numCombs>, 2> dampState {};
+    };
+
+    struct Definition { const char* id; const char* name; const char* category; };
     constexpr Definition defs[] = {
-        { BuiltinEffects::autoTuneId,   "AutoTune" },
-        { BuiltinEffects::robotId,      "Robot" },
-        { BuiltinEffects::radioId,      "Radio / Walkie-Talkie" },
-        { BuiltinEffects::bitcrusherId, "Bitcrusher" },
-        { BuiltinEffects::pitchId,      "Pitch Shift" },
-        { BuiltinEffects::deepVoiceId,  "Deep Voice" },
+        { BuiltinEffects::autoTuneId,   "AutoTune", "Pitch / Voice" },
+        { BuiltinEffects::pitchId,      "Pitch Shift", "Pitch / Voice" },
+        { BuiltinEffects::deepVoiceId,  "Deep Voice", "Pitch / Voice" },
+        { BuiltinEffects::unisonId,     "Unison", "Pitch / Voice" },
+        { BuiltinEffects::robotId,      "Robot", "Character" },
+        { BuiltinEffects::radioId,      "Radio / Walkie-Talkie", "Character" },
+        { BuiltinEffects::bitcrusherId, "Bitcrusher", "Character" },
+        { BuiltinEffects::wahId,        "Wah / Auto Wah", "Modulation" },
+        { BuiltinEffects::chorusId,     "Chorus", "Modulation" },
+        { BuiltinEffects::delayId,      "Delay", "Space" },
+        { BuiltinEffects::reverbId,     "Reverb", "Space" },
     };
 }
 
@@ -593,7 +1109,7 @@ namespace BuiltinEffects
             d.name = def.name;
             d.descriptiveName = def.name;
             d.manufacturerName = "MicVST Built-ins";
-            d.category = "Voice FX";
+            d.category = def.category;
             d.pluginFormatName = "Built-in";
             d.fileOrIdentifier = def.id;
             d.numInputChannels = 2;
@@ -612,6 +1128,11 @@ namespace BuiltinEffects
         if (id == bitcrusherId) return std::make_unique<BitcrusherProcessor>();
         if (id == pitchId)      return std::make_unique<PitchProcessor>();
         if (id == deepVoiceId)  return std::make_unique<DeepVoiceProcessor>();
+        if (id == wahId)        return std::make_unique<WahProcessor>();
+        if (id == unisonId)     return std::make_unique<UnisonProcessor>();
+        if (id == chorusId)     return std::make_unique<ChorusProcessor>();
+        if (id == delayId)      return std::make_unique<DelayProcessor>();
+        if (id == reverbId)     return std::make_unique<ReverbProcessor>();
         return {};
     }
 }

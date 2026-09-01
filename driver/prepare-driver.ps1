@@ -6,7 +6,10 @@ $ErrorActionPreference = "Stop"
 
 $Upstream = "https://github.com/VirtualDrivers/Virtual-Audio-Driver.git"
 $Commit = "bb34fba15faf569a6ae9bdea360bc1cf4821354e"
-$Patch = Join-Path $PSScriptRoot "patches\micvst-routing.patch"
+$Patches = @(
+    (Join-Path $PSScriptRoot "patches\micvst-routing.patch"),
+    (Join-Path $PSScriptRoot "patches\micvst-win11.patch")
+)
 
 function Invoke-Git {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
@@ -20,8 +23,10 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "Git for Windows is required to prepare the MicVST driver source."
 }
 
-if (-not (Test-Path $Patch)) {
-    throw "Driver patch not found: $Patch"
+foreach ($patch in $Patches) {
+    if (-not (Test-Path $patch)) {
+        throw "Driver patch not found: $patch"
+    }
 }
 
 $parent = Split-Path -Parent $WorkDir
@@ -44,9 +49,11 @@ try {
         throw "Unexpected upstream commit. Expected $Commit, got $actual"
     }
 
-    Write-Host "Applying MicVST routing patch..."
-    Invoke-Git apply --check $Patch
-    Invoke-Git apply $Patch
+    foreach ($patch in $Patches) {
+        Write-Host "Applying $(Split-Path -Leaf $patch)..."
+        Invoke-Git apply --check $patch
+        Invoke-Git apply $patch
+    }
 
     Write-Host ""
     Write-Host "MicVST driver source prepared at: $WorkDir"

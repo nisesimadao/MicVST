@@ -86,6 +86,16 @@ target_link_libraries(MicVST PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# --- Driver helper (Windows only) ---
+# Creates/removes the ROOT\MicVSTVirtualAudio devnode and installs the supplied INF
+# using SetupAPI/NewDev. This replaces the old development-only devcon step.
+if(WIN32)
+    add_executable(MicVSTDriverInstaller tools/DriverInstaller.cpp)
+    target_compile_features(MicVSTDriverInstaller PRIVATE cxx_std_17)
+    target_compile_definitions(MicVSTDriverInstaller PRIVATE UNICODE _UNICODE)
+    target_link_libraries(MicVSTDriverInstaller PRIVATE setupapi newdev)
+endif()
+
 # --- Unit tests (console app, JUCE UnitTestRunner) ---
 juce_add_console_app(MicVSTTests PRODUCT_NAME "MicVSTTests")
 target_sources(MicVSTTests PRIVATE

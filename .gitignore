@@ -1,4 +1,5 @@
 build/
+build-driver-tools/
 *.user
 .vs/
 _local/

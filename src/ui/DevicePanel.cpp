@@ -1,5 +1,10 @@
 #include "ui/DevicePanel.h"
 
+namespace
+{
+    constexpr const char* kMicVSTInternalOutput = "MicVST Internal Output";
+}
+
 DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
 {
     for (auto* l : { &inLabel, &outLabel })
@@ -8,11 +13,14 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     addAndMakeVisible (inLabel);  addAndMakeVisible (inBox);
     addAndMakeVisible (outLabel); addAndMakeVisible (outBox);
 
-    inInfo.setTooltip ("Select your microphone here");
-    outInfo.setTooltip ("Select \"CABLE Input\" here, "
-                        "and choose \"CABLE Output\" as the microphone in Discord etc.");
+    inInfo.setTooltip ("Select your physical microphone here");
+    outInfo.setTooltip ("Managed automatically by MicVST. Discord/OBS/Zoom should use "
+                        "\"MicVST Microphone\" as their microphone input.");
     addAndMakeVisible (inInfo);
     addAndMakeVisible (outInfo);
+
+    // The dedicated render endpoint is an implementation detail, not a routing choice.
+    outBox.setEnabled (false);
 
     bufInfo.setTooltip ("Buffer size in samples. Smaller = lower latency, higher CPU risk. "
                         "\"Auto\" uses the device default. Only shown when the devices "
@@ -27,7 +35,6 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     addAndMakeVisible (statusLabel);
 
     inBox.onChange  = [this] { apply(); };
-    outBox.onChange = [this] { apply(); };
 
     engine.getDeviceManager().addChangeListener (this);
     refresh();
@@ -67,12 +74,17 @@ void DevicePanel::refresh()
         const int si = ins.indexOf (setup.inputDeviceName);
         if (si >= 0) inBox.setSelectedId (si + 1, juce::dontSendNotification);
 
-        outBox.addItem ("(none)", 1);   // leerer Output-Name = kein Host-Output
-        const auto outs = type->getDeviceNames (false);
-        for (int i = 0; i < outs.size(); ++i) outBox.addItem (outs[i], i + 2);
-        const int so = outs.indexOf (setup.outputDeviceName);
-        outBox.setSelectedId (setup.outputDeviceName.isNotEmpty() && so >= 0 ? so + 2 : 1,
-                              juce::dontSendNotification);
+        // Output is read-only: show only the effective MicVST routing state.
+        if (setup.outputDeviceName.containsIgnoreCase (kMicVSTInternalOutput))
+        {
+            outBox.addItem (setup.outputDeviceName, 1);
+            outBox.setSelectedId (1, juce::dontSendNotification);
+        }
+        else
+        {
+            outBox.addItem ("MicVST driver not installed", 1);
+            outBox.setSelectedId (1, juce::dontSendNotification);
+        }
     }
 
     // Buffer-Zeile: nur wenn das aktuelle Gerät mehrere Größen anbietet (Low-Latency-Modus).
@@ -113,6 +125,8 @@ void DevicePanel::refresh()
 void DevicePanel::updateStatus()
 {
     auto& dm = engine.getDeviceManager();
+    const auto setup = dm.getAudioDeviceSetup();
+    const bool driverReady = setup.outputDeviceName.containsIgnoreCase (kMicVSTInternalOutput);
 
     juce::String st = engine.isRunning() ? juce::String ("Active")
                                          : juce::String ("Idle - device disconnected");
@@ -130,6 +144,9 @@ void DevicePanel::updateStatus()
                             + buf + pluginLatency) / sr * 1000.0;
         st << "   |   latency " << juce::String (lat, 1) << " ms";
     }
+
+    st << (driverReady ? "   |   virtual mic ready"
+                       : "   |   virtual mic driver missing");
     statusLabel.setText (st, juce::dontSendNotification);
 }
 
@@ -141,15 +158,9 @@ void DevicePanel::apply()
     auto* type = dm.getCurrentDeviceTypeObject();
     if (type == nullptr) return;
 
-    const auto ins  = type->getDeviceNames (true);
-    const auto outs = type->getDeviceNames (false);
-
+    const auto ins = type->getDeviceNames (true);
     const int ii = inBox.getSelectedId() - 1;
     juce::String input = juce::isPositiveAndBelow (ii, ins.size()) ? ins[ii] : juce::String();
-
-    juce::String output;   // "(none)" (id 1) -> leer
-    const int oid = outBox.getSelectedId();
-    if (oid >= 2 && juce::isPositiveAndBelow (oid - 2, outs.size())) output = outs[oid - 2];
 
     // Buffer-Wunsch: id 1 = Auto (0). Bei Auto den Geräte-Default explizit setzen,
     // weil setDeviceConfig 0 als "unverändert" interpretiert (sonst kein Zurückstellen).
@@ -164,7 +175,10 @@ void DevicePanel::apply()
     engine.setPreferredBufferSize (buf);
     auto* curDev = dm.getCurrentAudioDevice();
     const int effective = buf > 0 ? buf : (curDev != nullptr ? curDev->getDefaultBufferSize() : 0);
-    engine.setDeviceConfig (input, output, 0.0, effective);
+
+    // The output argument is intentionally ignored by AudioEngine: it always uses the
+    // dedicated MicVST Internal Output when the virtual driver is installed.
+    engine.setDeviceConfig (input, {}, 0.0, effective);
 }
 
 void DevicePanel::resized()

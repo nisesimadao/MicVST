@@ -1,6 +1,11 @@
 #include "audio/AudioEngine.h"
 using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
 
+namespace
+{
+    constexpr const char* kMicVSTInternalOutput = "MicVST Internal Output";
+}
+
 AudioEngine::AudioEngine()
 {
     // WICHTIG: erzwingt das Erstellen + Scannen der Geräte-Typen. Ohne diesen Aufruf
@@ -36,23 +41,16 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
 
 juce::String AudioEngine::detectCableOutput()
 {
-    // Render-Endpunkte bekannter virtueller Kabel, nach Priorität (VB-Cable zuerst).
-    static const char* const cablePatterns[] = {
-        "CABLE Input",          // VB-Audio Virtual Cable (empfohlen)
-        "VB-Audio",             // weitere VB-Audio-Kabel (Hi-Fi Cable etc.)
-        "VoiceMeeter Input",    // VoiceMeeter VAIO/Aux
-        "Virtual Audio Cable"   // VAC ("Line 1 (Virtual Audio Cable)")
-    };
-
+    // Dedicated MicVST render endpoint. Unlike the old VB-CABLE/VoiceMeeter path,
+    // this endpoint is owned by our driver and is never meant to be selected by the user.
     deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
     {
         type->scanForDevices();
-        auto outs = type->getDeviceNames (false /* output */);
-        for (auto* pat : cablePatterns)
-            for (auto& name : outs)
-                if (name.containsIgnoreCase (pat))
-                    return name;
+        const auto outs = type->getDeviceNames (false /* output */);
+        for (auto& name : outs)
+            if (name.containsIgnoreCase (kMicVSTInternalOutput))
+                return name;
     }
     return {};
 }
@@ -118,9 +116,11 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
 void AudioEngine::setDeviceConfig (const juce::String& input, const juce::String& output,
                                   double sampleRate, int bufferSize)
 {
+    (void) output; // Output routing is owned by MicVST; the UI must not redirect it elsewhere.
+
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.inputDeviceName  = input;
-    setup.outputDeviceName = output;
+    setup.outputDeviceName = detectCableOutput();
     if (sampleRate > 0.0) setup.sampleRate = sampleRate;
     if (bufferSize > 0)   setup.bufferSize = bufferSize;
     // Kanäle EXPLIZIT (wie in initialise) — sonst droht 0 aktive Input-Kanäle.
@@ -316,7 +316,15 @@ MicVSTState AudioEngine::captureState()
 void AudioEngine::applyState (const MicVSTState& s)
 {
     setPreferredBufferSize (s.bufferSize);
-    initialise (s.inputDevice, s.outputDevice);
+
+    // Output is deliberately not user-persisted anymore. If our virtual driver is
+    // installed, route to its private render endpoint. If it is not installed, keep
+    // output empty rather than silently falling back to VB-CABLE/VoiceMeeter.
+    const auto internalOutput = detectCableOutput();
+    juce::Logger::writeToLog (internalOutput.isNotEmpty()
+        ? "MicVST driver output = " + internalOutput
+        : "MicVST virtual audio driver not found -> output 'none'");
+    initialise (s.inputDevice, internalOutput);
 
     // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.
     // Sonst bis Scan-Ende zurückstellen (captureState liefert solange pendingPlugins,

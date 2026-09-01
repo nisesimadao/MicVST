@@ -8,9 +8,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $WorkDir = Join-Path $PSScriptRoot "work\Virtual-Audio-Driver"
 $packageDir = Join-Path $WorkDir "$Platform\$Configuration\package"
 $inf = Join-Path $packageDir "VirtualAudioDriver.inf"
+$toolBuild = Join-Path $repoRoot "build-driver-tools"
 
 if (-not (Test-Path $inf)) {
     throw "Built INF not found at $inf. Run build-driver.ps1 first."
@@ -21,15 +23,37 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw "Run this script from an elevated PowerShell window."
 }
 
+$installer = Get-ChildItem -Path $toolBuild -Recurse -Filter "MicVSTDriverInstaller.exe" -ErrorAction SilentlyContinue |
+             Select-Object -First 1 -ExpandProperty FullName
+
+if (-not $installer) {
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        throw "CMake is required to build MicVSTDriverInstaller."
+    }
+
+    Write-Host "Building MicVSTDriverInstaller..."
+    & cmake -S $repoRoot -B $toolBuild -A $Platform
+    if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE" }
+
+    & cmake --build $toolBuild --config Release --target MicVSTDriverInstaller
+    if ($LASTEXITCODE -ne 0) { throw "MicVSTDriverInstaller build failed with exit code $LASTEXITCODE" }
+
+    $installer = Get-ChildItem -Path $toolBuild -Recurse -Filter "MicVSTDriverInstaller.exe" |
+                 Select-Object -First 1 -ExpandProperty FullName
+}
+
+if (-not $installer -or -not (Test-Path $installer)) {
+    throw "MicVSTDriverInstaller.exe was not produced."
+}
+
 Write-Warning "This is a DEVELOPMENT install. The custom driver is not production-signed. Windows test-signing or an appropriately trusted test certificate is required."
-Write-Host "Adding driver package to the Driver Store..."
-& pnputil.exe /add-driver $inf /install
+Write-Host "Installing ROOT\MicVSTVirtualAudio without Device Manager/devcon..."
+& $installer install $inf
 if ($LASTEXITCODE -ne 0) {
-    throw "pnputil failed with exit code $LASTEXITCODE"
+    throw "MicVSTDriverInstaller failed with exit code $LASTEXITCODE"
 }
 
 Write-Host ""
-Write-Host "The package is in the Driver Store. If the ROOT\MicVSTVirtualAudio devnode does not already exist, use the WDK devcon tool to create it during development:"
-Write-Host "  devcon install `"$inf`" ROOT\MicVSTVirtualAudio"
-Write-Host ""
-Write-Host "The production installer will create the root-enumerated devnode automatically; this helper intentionally does not bundle devcon."
+Write-Host "Installed endpoints:"
+Write-Host "  Output (internal): MicVST Internal Output"
+Write-Host "  Input:             MicVST Microphone"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(MicVST VERSION 1.1.1 LANGUAGES C CXX)
+project(MicVST VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +102,8 @@ target_sources(MicVSTTests PRIVATE
     tests/TestMain.cpp
     tests/ScanTests.cpp
     tests/PickerTests.cpp
+    tests/BuiltinEffectsTests.cpp
+    src/audio/BuiltinEffects.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -109,6 +111,7 @@ target_compile_definitions(MicVSTTests PRIVATE
 target_link_libraries(MicVSTTests PRIVATE
     MicVSTCore
     juce::juce_audio_processors
+    juce::juce_audio_utils
     juce::juce_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

@@ -4,6 +4,23 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-01
+
+### Added
+- Built-in **Wah / Auto Wah** with envelope-following, LFO and manual modes.
+- Built-in **Unison** with 2-8 pitch-shifted voices, detune, stereo spread and per-voice stagger.
+- Built-in **Chorus** with rate, depth, base delay, feedback, stereo phase spread and mix.
+- Built-in **Delay** with stereo / ping-pong modes and low/high-cut filtering in the feedback path.
+- Built-in **Reverb** with room size, decay, pre-delay, damping, stereo width and mix.
+- DSP unit tests covering all built-ins, repeated finite/stability processing, state round-trips,
+  delay echoes, reverb tails and 8-voice Unison.
+- One-click v1.2.0 release workflow publishing Setup, portable EXE and SHA256 checksums.
+
+### Changed
+- App and installer version bumped to 1.2.0.
+- README expanded in Japanese with concrete DSP parameters, use cases and example chains.
+- GitHub update checks now target the `nisesimadao/MicVST` releases instead of upstream.
+
 ## [1.1.1] - 2026-07-27
 
 ### Added
@@ -108,7 +125,8 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
-[1.1.1]: https://github.com/philipz794/MicVST/releases/tag/v1.1.1
+[1.2.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.2.0
+[1.1.1]: https://github.com/nisesimadao/MicVST/releases/tag/v1.1.1
 [1.1.0]: https://github.com/philipz794/MicVST/releases/tag/v1.1.0
 [1.0.3]: https://github.com/philipz794/MicVST/releases/tag/v1.0.3
 [1.0.2]: https://github.com/philipz794/MicVST/releases/tag/v1.0.2

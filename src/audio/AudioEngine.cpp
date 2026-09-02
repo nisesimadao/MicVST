@@ -8,9 +8,6 @@ namespace
 
 AudioEngine::AudioEngine()
 {
-    // WICHTIG: erzwingt das Erstellen + Scannen der Geräte-Typen. Ohne diesen Aufruf
-    // ist availableDeviceTypes leer, getCurrentDeviceTypeObject() liefert nullptr und
-    // setCurrentAudioDeviceType()/setAudioDeviceSetup() sowie die Device-Suche tun nichts.
     deviceManager.getAvailableDeviceTypes();
     deviceManager.addChangeListener (this);
 
@@ -23,6 +20,7 @@ AudioEngine::AudioEngine()
 
 AudioEngine::~AudioEngine()
 {
+    audioPads.stopAll (true);
     secondaryOutput.onChanged = nullptr;
     secondaryOutput.setDevice ({});
     deviceManager.removeChangeListener (this);
@@ -39,24 +37,19 @@ bool AudioEngine::isRunning() const
 
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    // Device kam/ging: AudioDeviceManager stellt das gespeicherte Setup selbst
-    // wieder her (namensbasiert). Wir spiegeln nur den Status nach außen.
     juce::Logger::writeToLog (isRunning() ? "Audio: läuft"
                                           : "Audio: idle (Device getrennt?)");
     if (onStatusChanged) onStatusChanged();
-    if (onDeviceChanged) onDeviceChanged();   // Geräte-Einstellungen persistieren
+    if (onDeviceChanged) onDeviceChanged();
 }
 
 juce::String AudioEngine::detectCableOutput()
 {
-    // MicVST intentionally uses only the base VB-CABLE package. Do not fall back to
-    // VoiceMeeter/VAC or the experimental MicVST kernel driver: a predictable backend
-    // keeps setup simple and works on normal Secure-Boot Windows installations.
     deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
     {
         type->scanForDevices();
-        const auto outs = type->getDeviceNames (false /* output */);
+        const auto outs = type->getDeviceNames (false);
         for (auto& name : outs)
             if (name.containsIgnoreCase (kVBCableRenderEndpoint))
                 return name;
@@ -67,33 +60,24 @@ juce::String AudioEngine::detectCableOutput()
 juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
                                       const juce::String& outputDeviceName)
 {
-    deviceManager.removeAudioCallback (this);   // idempotent: doppelte Registrierung vermeiden
+    deviceManager.removeAudioCallback (this);
     deviceManager.closeAudioDevice();
     deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
 
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     deviceManager.getAudioDeviceSetup (setup);
-    // Namen VERBATIM übernehmen — auch leer. Ein leerer Output-Name bedeutet bewusst
-    // "kein Host-Output" ("none"); der Input-WASAPI-Callback treibt die Engine dann allein.
-    // Würden wir leer überspringen, bliebe das alte Default-Gerät stehen und "none"
-    // ließe sich nicht speichern.
     setup.inputDeviceName  = inputDeviceName;
     setup.outputDeviceName = outputDeviceName;
     if (preferredBufferSize > 0)
-        setup.bufferSize = preferredBufferSize;   // 0 = Auto: Geräte-Default nicht anfassen
-    // Kanäle EXPLIZIT aktivieren. Auf useDefault* darf man sich nicht verlassen:
-    // ohne deviceManager.initialise(numIn,numOut,...) ist numInputChansNeeded=0,
-    // wodurch die "Default"-Input-Kanäle auf [0,0) = KEINE gesetzt würden.
+        setup.bufferSize = preferredBufferSize;
     setup.useDefaultInputChannels  = false;
     setup.useDefaultOutputChannels = false;
     setup.inputChannels.clear();
-    setup.inputChannels.setRange (0, 2, true);    // bis zu 2 Mic-Kanäle (mono nutzt nur ch0)
+    setup.inputChannels.setRange (0, 2, true);
     setup.outputChannels.clear();
     setup.outputChannels.setRange (0, 2, true);
-    setup.sampleRate = 48000.0;   // bevorzugt; WASAPI shared kann die Mix-Rate des Geräts erzwingen
+    setup.sampleRate = 48000.0;
 
-    // Fehler NICHT früh zurückgeben: Graph/Chain müssen immer existieren,
-    // auch wenn (noch) kein Device offen ist (z. B. Gerät noch nicht da / Reconnect).
     const juce::String err = deviceManager.setAudioDeviceSetup (setup, true);
 
     if (auto* d = deviceManager.getCurrentAudioDevice())
@@ -109,10 +93,8 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
     auto outNode = graph.addNode (std::make_unique<IOProc> (IOProc::audioOutputNode));
 
     pluginChain = std::make_unique<PluginChain> (graph, inNode->nodeID, outNode->nodeID);
-    rebuildGraph();   // leere Kette: in -> out (inkl. Mono→Stereo-Fanout)
+    rebuildGraph();
 
-    // Eigenen "spielenden" Playhead setzen, BEVOR der Player seinen (ohne isPlaying)
-    // installiert. Der Player nutzt seinen nur, wenn der Graph keinen hat.
     if (auto* d = deviceManager.getCurrentAudioDevice())
         playHead.sampleRate.store (d->getCurrentSampleRate());
     graph.setPlayHead (&playHead);
@@ -125,21 +107,20 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
 void AudioEngine::setDeviceConfig (const juce::String& input, const juce::String& output,
                                   double sampleRate, int bufferSize)
 {
-    (void) output; // Output routing is owned by MicVST; the UI must not redirect it elsewhere.
+    (void) output;
 
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.inputDeviceName  = input;
     setup.outputDeviceName = detectCableOutput();
     if (sampleRate > 0.0) setup.sampleRate = sampleRate;
     if (bufferSize > 0)   setup.bufferSize = bufferSize;
-    // Kanäle EXPLIZIT (wie in initialise) — sonst droht 0 aktive Input-Kanäle.
     setup.useDefaultInputChannels  = false;
     setup.useDefaultOutputChannels = false;
     setup.inputChannels.clear();  setup.inputChannels.setRange (0, 2, true);
     setup.outputChannels.clear(); setup.outputChannels.setRange (0, 2, true);
 
     deviceManager.setAudioDeviceSetup (setup, true);
-    rebuildGraph();   // IO-Knoten-Kanalzahl kann sich geändert haben -> neu verdrahten
+    rebuildGraph();
 }
 
 void AudioEngine::rebuildGraph()
@@ -156,8 +137,6 @@ juce::File AudioEngine::pluginCacheFile()
 
 juce::StringArray AudioEngine::scanRoots() const
 {
-    // JUCE-Default-Orte statt hartkodiertem Pfad: deckt neben Program Files auch
-    // %LOCALAPPDATA%\Programs\Common\VST3 und die VST3_PATH-Umgebungsvariable ab.
     MicVST3Format vst3;
     juce::StringArray roots;
     const auto defaults = vst3.getDefaultLocationsToSearch();
@@ -210,7 +189,7 @@ void AudioEngine::startBackgroundScan (int timeoutMs, const juce::StringArray& f
 
 void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
 {
-    scanner = nullptr;   // Callback kommt via callAsync -> wir sind auf dem Message-Thread
+    scanner = nullptr;
 
     mergeScanResults (knownPlugins, outcome);
     for (auto& s : outcome.skipped)
@@ -219,10 +198,7 @@ void AudioEngine::handleScanFinished (const ScanOutcome& outcome)
         juce::Logger::writeToLog ("Scan übersprungen (" + s.reason + "): " + s.file);
     }
 
-    // Ordner können während des Scans entfernt worden sein -> NACH dem Übernehmen wegputzen,
-    // damit auch frisch gescannte Fremd-Ergebnisse rausfliegen.
     pruneOutsideFolders();
-
     PluginScanCache::save (pluginCacheFile(), knownPlugins, skippedPlugins);
 
     if (! pendingPlugins.isEmpty())
@@ -248,16 +224,12 @@ void AudioEngine::retrySkippedPlugins()
 {
     if (isScanning() || skippedPlugins.isEmpty()) return;
 
-    // Crash-Rescue: Gerettete Typen sind im Cache schon mit AKTUELLER effectiveModTime
-    // gestempelt (mergeScanResults) -> ohne forceRescan hielte filterFilesNeedingScan die
-    // Datei für up-to-date und der Retry würde für sie stillschweigend nichts tun. Vor dem
-    // Leeren einsammeln (skippedPlugins ist danach weg), nur noch existierende Dateien.
     juce::StringArray forceRescan;
     for (auto& s : skippedPlugins)
         if (juce::File (s.file).exists())
             forceRescan.add (s.file);
 
-    skippedPlugins.clear();   // Cache/Fundliste bleiben -> nur die Geskippten werden gescannt
+    skippedPlugins.clear();
     startBackgroundScan (ScanCoordinator::retryTimeoutMs, forceRescan);
 }
 
@@ -301,9 +273,9 @@ MicVSTState AudioEngine::captureState()
     s.sampleRate   = setup.sampleRate;
     s.bufferSize   = preferredBufferSize;
     s.pluginFolders = pluginFolders;
+    s.audioPads = audioPads.captureStates();
+    s.audioPadMasterVolume = audioPads.getMasterVolume();
 
-    // Ketten-Restore steht noch aus -> gemerkten Zustand verbatim zurückgeben,
-    // sonst würde persistState() die gespeicherte Kette mit "leer" überschreiben.
     if (! pendingPlugins.isEmpty()) { s.plugins = pendingPlugins; return s; }
     if (pluginChain == nullptr) return s;
 
@@ -315,7 +287,7 @@ MicVSTState AudioEngine::captureState()
         if (auto* node = graph.getNodeForId (e.node))
         {
             auto* proc = node->getProcessor();
-            const juce::ScopedLock sl (proc->getCallbackLock());   // gegen Race mit processBlock
+            const juce::ScopedLock sl (proc->getCallbackLock());
             proc->getStateInformation (p.state);
         }
         s.plugins.add (p);
@@ -327,21 +299,18 @@ void AudioEngine::applyState (const MicVSTState& s)
 {
     setPreferredBufferSize (s.bufferSize);
 
-    // Output is deliberately not user-persisted: MicVST always targets the base
-    // VB-CABLE render endpoint. If it is not installed, leave output empty and let
-    // the UI explain that the backend needs installation/reboot.
     const auto cableOutput = detectCableOutput();
     juce::Logger::writeToLog (cableOutput.isNotEmpty()
         ? "VB-CABLE host output = " + cableOutput
         : "VB-CABLE not found -> output 'none'");
     initialise (s.inputDevice, cableOutput);
 
+    audioPads.setMasterVolume (s.audioPadMasterVolume);
+    audioPads.restoreStates (s.audioPads);
+
     if (const auto output2Error = setOutput2Device (s.output2Device); output2Error.isNotEmpty())
         juce::Logger::writeToLog (output2Error);
 
-    // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.
-    // Sonst bis Scan-Ende zurückstellen (captureState liefert solange pendingPlugins,
-    // damit persistState die Kette nicht mit "leer" überschreibt).
     bool allResolvable = true;
     for (auto& p : s.plugins)
         if (! p.fileOrId.startsWith ("builtin:") && knownPlugins.getTypeForFile (p.fileOrId) == nullptr)
@@ -405,19 +374,26 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
-    // Geöffnete Geräte-/Kanalkonfiguration ins Log (hilft beim Diagnostizieren von Audio-Problemen).
     juce::Logger::writeToLog ("Device start: '" + device->getName() + "'"
         + " | inCh aktiv=" + juce::String (device->getActiveInputChannels().countNumberOfSetBits())
         + " von [" + device->getInputChannelNames().joinIntoString (", ") + "]"
         + " | outCh aktiv=" + juce::String (device->getActiveOutputChannels().countNumberOfSetBits())
         + " | sr=" + juce::String (device->getCurrentSampleRate(), 0)
         + " | buf=" + juce::String (device->getCurrentBufferSizeSamples()));
+
+    const int block = juce::jmax (1, device->getCurrentBufferSizeSamples());
+    padScratchCapacity = juce::jmax (8192, block * 4);
+    for (auto* b : { &padPreFx, &padPostFx, &padOutput2Only, &mixedInput, &output2Mix })
+        b->setSize (2, padScratchCapacity, false, true, false);
+
+    audioPads.prepare (device->getCurrentSampleRate(), padScratchCapacity);
     secondaryOutput.setSourceSampleRate (device->getCurrentSampleRate());
     player.audioDeviceAboutToStart (device);
 }
 
 void AudioEngine::audioDeviceStopped()
 {
+    audioPads.stopAll (true);
     player.audioDeviceStopped();
 }
 
@@ -428,7 +404,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                                     int numSamples,
                                                     const juce::AudioIODeviceCallbackContext& context)
 {
-    playHead.samples.fetch_add (numSamples, std::memory_order_relaxed);   // Transport voranschieben
+    playHead.samples.fetch_add (numSamples, std::memory_order_relaxed);
+
     if (numInputChannels > 0)
     {
         juce::AudioBuffer<float> inView (const_cast<float* const*> (inputChannelData),
@@ -436,18 +413,83 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         inputMeter.process (inView);
     }
 
-    // Graph verarbeiten (Input -> Kette -> Output).
-    player.audioDeviceIOCallbackWithContext (inputChannelData, numInputChannels,
+    if (numSamples > padScratchCapacity || padScratchCapacity <= 0)
+    {
+        // Should never happen with WASAPI's fixed callback size; keep the primary path alive
+        // rather than allocating on the realtime thread.
+        player.audioDeviceIOCallbackWithContext (inputChannelData, numInputChannels,
+                                                 outputChannelData, numOutputChannels,
+                                                 numSamples, context);
+        if (numOutputChannels > 0)
+        {
+            secondaryOutput.push (const_cast<const float* const*> (outputChannelData),
+                                  numOutputChannels, numSamples);
+            juce::AudioBuffer<float> outView (outputChannelData, numOutputChannels, numSamples);
+            outputMeter.process (outView);
+        }
+        return;
+    }
+
+    audioPads.render (padPreFx, padPostFx, padOutput2Only, numSamples);
+
+    // Pre-FX pads are mixed into the graph input, so they pass through the same VST/DSP chain.
+    const int playerInputs = numInputChannels > 0 ? juce::jmin (2, numInputChannels) : 2;
+    mixedInput.clear (0, numSamples);
+    for (int ch = 0; ch < playerInputs; ++ch)
+    {
+        if (numInputChannels > 0 && inputChannelData[ch] != nullptr)
+            mixedInput.copyFrom (ch, 0, inputChannelData[ch], numSamples);
+
+        if (playerInputs == 1)
+        {
+            mixedInput.addFrom (0, 0, padPreFx, 0, 0, numSamples, 0.5f);
+            mixedInput.addFrom (0, 0, padPreFx, 1, 0, numSamples, 0.5f);
+        }
+        else
+            mixedInput.addFrom (ch, 0, padPreFx, juce::jmin (ch, 1), 0, numSamples);
+    }
+
+    const float* mixedPtrs[2] = { mixedInput.getReadPointer (0), mixedInput.getReadPointer (1) };
+    player.audioDeviceIOCallbackWithContext (mixedPtrs, playerInputs,
                                              outputChannelData, numOutputChannels,
                                              numSamples, context);
 
+    // Post-FX pads bypass the DSP chain and are mixed directly into the virtual-mic bus.
+    if (numOutputChannels == 1 && outputChannelData[0] != nullptr)
+    {
+        juce::FloatVectorOperations::addWithMultiply (outputChannelData[0], padPostFx.getReadPointer (0), 0.5f, numSamples);
+        juce::FloatVectorOperations::addWithMultiply (outputChannelData[0], padPostFx.getReadPointer (1), 0.5f, numSamples);
+    }
+    else
+    {
+        for (int ch = 0; ch < juce::jmin (2, numOutputChannels); ++ch)
+            if (outputChannelData[ch] != nullptr)
+                juce::FloatVectorOperations::add (outputChannelData[ch], padPostFx.getReadPointer (ch), numSamples);
+    }
+
+    // Output2 receives the primary processed mix plus its private pad bus. Output2-only pads
+    // never reach CABLE Input, so they can be used for local cues/metronomes/preview sounds.
+    if (secondaryOutput.isRunning())
+    {
+        output2Mix.clear (0, numSamples);
+        if (numOutputChannels == 1 && outputChannelData[0] != nullptr)
+        {
+            output2Mix.copyFrom (0, 0, outputChannelData[0], numSamples);
+            output2Mix.copyFrom (1, 0, outputChannelData[0], numSamples);
+        }
+        else if (numOutputChannels > 1)
+        {
+            if (outputChannelData[0] != nullptr) output2Mix.copyFrom (0, 0, outputChannelData[0], numSamples);
+            if (outputChannelData[1] != nullptr) output2Mix.copyFrom (1, 0, outputChannelData[1], numSamples);
+        }
+        output2Mix.addFrom (0, 0, padOutput2Only, 0, 0, numSamples);
+        output2Mix.addFrom (1, 0, padOutput2Only, 1, 0, numSamples);
+        const float* monitorPtrs[2] = { output2Mix.getReadPointer (0), output2Mix.getReadPointer (1) };
+        secondaryOutput.push (monitorPtrs, 2, numSamples);
+    }
+
     if (numOutputChannels > 0)
     {
-        // Output2 gets the exact same post-DSP/post-VST samples as VB-CABLE, but its
-        // independent WASAPI clock is decoupled by MonitorBuffer.
-        secondaryOutput.push (const_cast<const float* const*> (outputChannelData),
-                              numOutputChannels, numSamples);
-
         juce::AudioBuffer<float> outView (outputChannelData, numOutputChannels, numSamples);
         outputMeter.process (outView);
     }

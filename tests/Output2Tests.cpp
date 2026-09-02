@@ -20,6 +20,20 @@ namespace
         for (float x : v) p = juce::jmax (p, std::abs (x));
         return p;
     }
+
+    void pushInBlocks (MonitorBuffer& buffer,
+                       const std::vector<float>& left,
+                       const std::vector<float>* right = nullptr,
+                       int blockSize = 256)
+    {
+        for (int offset = 0; offset < (int) left.size(); offset += blockSize)
+        {
+            const int n = juce::jmin (blockSize, (int) left.size() - offset);
+            const float* channels[2] = { left.data() + offset,
+                                         right != nullptr ? right->data() + offset : left.data() + offset };
+            buffer.push (channels, right != nullptr ? 2 : 1, n);
+        }
+    }
 }
 
 struct Output2MonitorBufferTest : juce::UnitTest
@@ -52,8 +66,7 @@ struct Output2MonitorBufferTest : juce::UnitTest
             b.prepare (48000.0, 256);
 
             std::vector<float> left (4096, 0.25f), right (4096, -0.5f);
-            const float* in[] = { left.data(), right.data() };
-            b.push (in, 2, (int) left.size());
+            pushInBlocks (b, left, &right);
 
             std::vector<float> l (512, 0.0f), r (512, 0.0f);
             float* out[] = { l.data(), r.data() };
@@ -74,8 +87,7 @@ struct Output2MonitorBufferTest : juce::UnitTest
             std::vector<float> source (8192);
             for (int i = 0; i < (int) source.size(); ++i)
                 source[(size_t) i] = 0.4f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f);
-            const float* in[] = { source.data() };
-            b.push (in, 1, (int) source.size());
+            pushInBlocks (b, source);
 
             std::vector<float> l (1024, 0.0f), r (1024, 0.0f);
             float* out[] = { l.data(), r.data() };

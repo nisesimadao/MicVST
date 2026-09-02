@@ -12,6 +12,7 @@ struct PluginEntryState
 struct MicVSTState
 {
     juce::String inputDevice, outputDevice;
+    juce::String output2Device; // optional monitoring output; empty = Off
     double sampleRate = 48000.0;
     int    bufferSize = 0;   // Buffer-Wunsch in Samples; 0 = Auto (Geräte-Default)
     juce::Array<PluginEntryState> plugins;

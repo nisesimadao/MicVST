@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_core/juce_core.h>
+#include "audio/AudioPadTypes.h"
 
 struct PluginEntryState
 {
@@ -17,6 +18,10 @@ struct MicVSTState
     int    bufferSize = 0;   // Buffer-Wunsch in Samples; 0 = Auto (Geräte-Default)
     juce::Array<PluginEntryState> plugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner
+
+    juce::Array<AudioPadState> audioPads;
+    float audioPadMasterVolume = 1.0f;
+
     juce::String windowState;          // DocumentWindow::getWindowStateAsString() (Größe/Position)
 
     // Opt-in Auto-Update-Check (siehe UpdateChecker). Default: aus, nie gefragt.

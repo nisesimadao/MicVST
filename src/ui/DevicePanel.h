@@ -41,6 +41,7 @@ private:
     void refresh();
     void updateStatus();
     void apply();
+    void applyOutput2();
 
     AudioEngine& engine;
     juce::Label inLabel { {}, "Input" }, outLabel { {}, "Output" }, out2Label { {}, "Output 2" };

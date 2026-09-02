@@ -8,39 +8,36 @@ namespace
         return
             "How to use MicVST\n"
             "\n"
-            "1)  Install a virtual audio cable\n"
-            "    VB-Cable (free) is recommended (link below). MicVST detects it automatically.\n"
+            "1)  Pick your devices\n"
+            "    Input    = your physical microphone\n"
+            "    Output   = CABLE Input (managed automatically)\n"
+            "    Output 2 = optional headphones / speakers for local monitoring\n"
             "\n"
-            "2)  Pick your devices (top of the window)\n"
-            "    Input   =  your microphone\n"
-            "    Output  =  the virtual cable (e.g. \"CABLE Input\")\n"
+            "2)  Build your effect chain\n"
+            "    - + Plugin opens the built-in DSP and VST3 picker.\n"
+            "    - Drag effects to reorder, Bypass to disable, double-click to edit.\n"
             "\n"
-            "3)  Build your plugin chain\n"
-            "    - \"+ Plugin\" opens a searchable list (grouped by manufacturer) of all VST3 effects\n"
-            "      and built-in nodes. Add effects you like (EQ, de-noise, compressor, ...).\n"
-            "    - Insert \"Mono -> Stereo\" where you want stereo (before it the chain runs\n"
-            "      mono = less CPU). \"Stereo -> Mono\" is available too.\n"
-            "    - Drag the handle on the left to reorder; the trash icon removes (with a prompt).\n"
-            "    - Double-click a plugin to open its editor.\n"
-            "    - \"Manage VST3 Folders\" adds plugins from other locations.\n"
+            "3)  Audio Pads / Soundboard\n"
+            "    - Expand Audio Pads and drag WAV / MP3 / FLAC / OGG / AIFF files onto a pad.\n"
+            "    - Click a pad or assign a global Windows hotkey such as F8 or Ctrl+Shift+1.\n"
+            "    - Post FX plays the clip after your effects. Pre FX sends it through the DSP/VST chain.\n"
+            "    - Output2 only is audible locally but is NOT sent to Discord.\n"
+            "    - Each pad has volume, loop, retrigger mode and fade in/out settings.\n"
             "\n"
-            "4)  Use it in any app\n"
-            "    In Discord / OBS / Zoom / ..., select \"CABLE Output\" as the microphone.\n"
+            "4)  Use it in Discord / OBS / Zoom / games\n"
+            "    Select CABLE Output as the microphone.\n"
             "\n"
-            "5)  That's it\n"
-            "    Settings are saved automatically. Closing the window keeps MicVST running in the\n"
-            "    tray (right-click the tray icon for options). Enable \"Run at startup\" to launch\n"
-            "    it silently on boot.\n"
+            "5)  Tray / startup\n"
+            "    Closing the window keeps MicVST running in the tray. Pad global hotkeys keep working\n"
+            "    while the window is hidden. Run at startup launches MicVST silently on Windows login.\n"
             "\n"
             "Auto-Update-Check\n"
-            "    With \"Auto-Update-Check\" enabled, MicVST asks GitHub once on each start whether a\n"
-            "    newer version exists. No data is collected and there is no auto-installer - if an\n"
-            "    update is found, the version number turns into a link to the download.";
+            "    If enabled, MicVST asks GitHub once per startup whether a newer version exists.\n"
+            "    No telemetry is sent and there is no forced auto-installer.";
     }
 
     const char* const kRepoUrl = "https://github.com/nisesimadao/MicVST";
 
-    // Inhalt des How-To-Fensters: Anleitungstext + klickbare Links (VB-Cable, GitHub).
     class HowToContent : public juce::Component
     {
     public:
@@ -86,7 +83,6 @@ namespace
         juce::HyperlinkButton vbCable, github;
     };
 
-    // Eigenes Fenster mit der Anleitung. Schließen versteckt nur (Instanz bleibt zum Wieder-Öffnen).
     class HowToWindow : public juce::DocumentWindow
     {
     public:
@@ -97,7 +93,7 @@ namespace
             setUsingNativeTitleBar (true);
             setContentOwned (new HowToContent(), false);
             setResizable (true, false);
-            centreWithSize (560, 560);
+            centreWithSize (590, 610);
         }
         void closeButtonPressed() override { setVisible (false); }
     };
@@ -114,6 +110,10 @@ MainComponent::MainComponent (AudioEngine& e) : engine (e)
     addAndMakeVisible (outLabel);
     inLabel.setJustificationType (juce::Justification::centredLeft);
     outLabel.setJustificationType (juce::Justification::centredLeft);
+
+    audioPadPanel = std::make_unique<AudioPadPanel> (engine);
+    audioPadPanel->onPreferredHeightChanged = [this] { resized(); };
+    addAndMakeVisible (*audioPadPanel);
 
     pluginList = std::make_unique<PluginListView> (engine);
     addAndMakeVisible (*pluginList);
@@ -147,12 +147,12 @@ MainComponent::MainComponent (AudioEngine& e) : engine (e)
     cableHint.setColour (juce::HyperlinkButton::textColourId, juce::Colours::orange);
     cableHint.setJustificationType (juce::Justification::centredLeft);
     cableHint.setTooltip ("https://vb-audio.com/Cable/");
-    addChildComponent (cableHint);   // Sichtbarkeit steuert updateCableHint()
+    addChildComponent (cableHint);
 
     engine.onStatusChanged = [this] { updateCableHint(); };
     updateCableHint();
 
-    setSize (560, 560);
+    setSize (600, 600);
     startTimerHz (30);
 }
 
@@ -166,7 +166,6 @@ void MainComponent::timerCallback()
 {
     inMeter.setLevel (engine.inputLevel());
     outMeter.setLevel (engine.outputLevel());
-    // Mit der Registry synchron halten (z. B. wenn der Tray den Autostart umschaltet).
     autostartToggle.setToggleState (AutostartRegistry::isEnabled(), juce::dontSendNotification);
 }
 
@@ -186,8 +185,6 @@ void MainComponent::setUpdateCheckEnabled (bool on, bool runIfOn)
 
 void MainComponent::startUpdateCheck()
 {
-    // SafePointer: falls die Komponente vor dem (asynchronen) Ergebnis zerstört wird,
-    // läuft der Callback ins Leere statt in einen Dangling-this.
     juce::Component::SafePointer<MainComponent> safe (this);
     updateChecker.start (currentVersion, [safe] (UpdateChecker::Result r)
     {
@@ -205,13 +202,11 @@ void MainComponent::showUpdateAvailable (const juce::String& latestVersion, cons
     versionLink.setURL (juce::URL (url));
     versionLink.setTooltip ("MicVST " + latestVersion + " is available on GitHub - click to open");
     versionLink.setColour (juce::HyperlinkButton::textColourId, juce::Colours::orange);
-    resized();   // Text ist breiter -> Layout der unteren Leiste auffrischen
+    resized();
 }
 
 void MainComponent::updateCableHint()
 {
-    // Hinweis nur zeigen, wenn KEIN virtuelles Kabel installiert ist. Wird bei Geräte-
-    // Änderungen aufgerufen (z. B. nach VB-Cable-Installation verschwindet er von selbst).
     const bool noCable = engine.detectCableOutput().isEmpty();
     if (noCable != cableHint.isVisible())
     {
@@ -224,19 +219,15 @@ void MainComponent::resized()
 {
     auto r = getLocalBounds().reduced (8);
     auto bottomRow = r.removeFromBottom (24);
-    // Rechts, von außen nach innen: Run at startup (Rand) | Auto-Update-Check | How To.
     autostartToggle.setBounds (bottomRow.removeFromRight (120));
     bottomRow.removeFromRight (6);
     updateToggle.setBounds (bottomRow.removeFromRight (150));
     bottomRow.removeFromRight (6);
     howToBtn.setBounds (bottomRow.removeFromRight (80));
-    // Links die klickbare Version: Breite an den Text anpassen, sonst ist der leere Reserve-
-    // Platz (für "> Update available!") mit-klickbar.
     versionLink.setBounds (bottomRow);
     versionLink.changeWidthToFitText();
     r.removeFromBottom (4);
 
-    // Horizontale Meter: In-Zeile, Out-Zeile, gemeinsame dB-Skala darunter.
     constexpr int labelW = 40;
     auto inRow = r.removeFromTop (22);
     inLabel.setBounds (inRow.removeFromLeft (labelW));
@@ -246,7 +237,7 @@ void MainComponent::resized()
     outLabel.setBounds (outRow.removeFromLeft (labelW));
     outMeter.setBounds (outRow.reduced (2, 1));
     auto scaleRow = r.removeFromTop (16);
-    scaleRow.removeFromLeft (labelW);                 // bündig unter den Metern
+    scaleRow.removeFromLeft (labelW);
     dbScale.setBounds (scaleRow.reduced (2, 0));
     r.removeFromTop (8);
 
@@ -256,9 +247,11 @@ void MainComponent::resized()
         r.removeFromTop (4);
     }
 
-    // DevicePanel meldet seine Höhe selbst (3 Zeilen, +1 wenn die Buffer-Zeile sichtbar
-    // ist); die Plugin-Liste bekommt den ganzen Rest.
     devicePanel->setBounds (r.removeFromTop (devicePanel->preferredHeight()));
-    r.removeFromTop (8);
+    r.removeFromTop (6);
+
+    audioPadPanel->setBounds (r.removeFromTop (audioPadPanel->preferredHeight()));
+    r.removeFromTop (6);
+
     pluginList->setBounds (r);
 }

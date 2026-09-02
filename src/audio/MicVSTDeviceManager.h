@@ -28,4 +28,12 @@ struct MicVSTDeviceManager : juce::AudioDeviceManager
                 return lowLatencyTypeName;
         return sharedTypeName;
     }
+
+    // MicVST historically used this longer helper name in several call sites. JUCE 8's
+    // public API is getCurrentDeviceTypeObject(); keep one compatibility shim so both the
+    // existing primary path and the new Output2 path use the official implementation.
+    juce::AudioIODeviceType* getCurrentAudioDeviceTypeObject() const
+    {
+        return getCurrentDeviceTypeObject();
+    }
 };

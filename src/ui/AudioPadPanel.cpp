@@ -198,13 +198,17 @@ void AudioPadPanel::setExpanded (bool shouldExpand)
     expanded = shouldExpand;
     expandButton.setButtonText (expanded ? "Audio Pads  v" : "Audio Pads  >");
 
-    for (auto* c : { static_cast<juce::Component*> (&masterLabel), &masterSlider, &stopAllButton,
-                     &selectedLabel, &nameEditor, &loadButton, &clearButton, &volumeLabel,
-                     &volumeSlider, &loopToggle, &routeBox, &retriggerBox, &hotkeyLabel,
-                     &hotkeyEditor, &fadeInLabel, &fadeInSlider, &fadeOutLabel, &fadeOutSlider,
-                     &colourButton })
+    juce::Component* inspectorControls[] = {
+        &masterLabel, &masterSlider, &stopAllButton,
+        &selectedLabel, &nameEditor, &loadButton, &clearButton, &volumeLabel,
+        &volumeSlider, &loopToggle, &routeBox, &retriggerBox, &hotkeyLabel,
+        &hotkeyEditor, &fadeInLabel, &fadeInSlider, &fadeOutLabel, &fadeOutSlider,
+        &colourButton
+    };
+    for (auto* c : inspectorControls)
         c->setVisible (expanded);
-    for (auto& b : padButtons) b->setVisible (expanded);
+    for (auto& b : padButtons)
+        b->setVisible (expanded);
 
     if (onPreferredHeightChanged) onPreferredHeightChanged();
     resized();
@@ -410,8 +414,6 @@ void AudioPadPanel::timerCallback()
 {
     refreshPads();
 
-    // Edge-triggered global hotkeys keep working while the main window is hidden in the tray.
-    // Do not fire while the user is editing a hotkey field.
     const bool editing = hotkeyEditor.hasKeyboardFocus (true);
     for (int i = 0; i < AudioPadEngine::padCount; ++i)
     {

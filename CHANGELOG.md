@@ -4,6 +4,28 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-02
+
+### Added
+- Configurable **Output 2** for local monitoring of the fully processed MicVST signal
+  through headphones, speakers, audio interfaces, HDMI/DP audio and other Windows outputs.
+- Independent second WASAPI `AudioDeviceManager`, keeping the primary `CABLE Input`
+  virtual-microphone route untouched.
+- Lock-free SPSC monitor buffer with a small safety fill so the Output2 device cannot block
+  MicVST's main realtime DSP/VST callback.
+- Lightweight Output2 resampling and adaptive clock-drift correction for different device
+  sample rates and independent hardware clocks.
+- Output2 selection persistence, including preserving temporarily disconnected devices as
+  unavailable instead of silently forgetting the setting.
+- Output2 tests covering safety-buffer behaviour, stereo signal copying, 48 kHz -> 44.1 kHz
+  monitoring and config round-trips.
+- v1.3.0 release workflow publishing Setup, portable EXE and SHA256 checksums.
+
+### Changed
+- App and installer version bumped to 1.3.0.
+- README now documents the difference between fixed `Output` and configurable `Output 2`,
+  including monitoring latency and acoustic-feedback warnings.
+
 ## [1.2.0] - 2026-09-01
 
 ### Added
@@ -125,6 +147,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
+[1.3.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.3.0
 [1.2.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.2.0
 [1.1.1]: https://github.com/nisesimadao/MicVST/releases/tag/v1.1.1
 [1.1.0]: https://github.com/philipz794/MicVST/releases/tag/v1.1.0

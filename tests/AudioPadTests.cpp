@@ -20,14 +20,13 @@ namespace
         out.write (b, 4);
     }
 
-    juce::File makeTestWav (int samples = 4096)
+    juce::File makeTestWav (int samples = 4096, int sampleRate = 48000)
     {
         auto file = juce::File::getSpecialLocation (juce::File::tempDirectory)
                         .getNonexistentChildFile ("micvst-pad-test", ".wav", false);
         std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
         if (out == nullptr) return {};
 
-        constexpr int sampleRate = 48000;
         constexpr int channels = 1;
         constexpr int bits = 16;
         const juce::uint32 dataBytes = (juce::uint32) (samples * channels * bits / 8);
@@ -35,13 +34,13 @@ namespace
         out->write ("WAVE", 4);
         out->write ("fmt ", 4); writeLE32 (*out, 16);
         writeLE16 (*out, 1); writeLE16 (*out, channels);
-        writeLE32 (*out, sampleRate);
-        writeLE32 (*out, sampleRate * channels * bits / 8);
+        writeLE32 (*out, (juce::uint32) sampleRate);
+        writeLE32 (*out, (juce::uint32) (sampleRate * channels * bits / 8));
         writeLE16 (*out, channels * bits / 8); writeLE16 (*out, bits);
         out->write ("data", 4); writeLE32 (*out, dataBytes);
         for (int i = 0; i < samples; ++i)
         {
-            const float x = 0.4f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / sampleRate);
+            const float x = 0.4f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / (float) sampleRate);
             const auto s = (juce::int16) juce::jlimit (-32767, 32767, (int) std::lround (x * 32767.0f));
             writeLE16 (*out, (juce::uint16) s);
         }
@@ -108,6 +107,19 @@ struct AudioPadEngineTest : juce::UnitTest
             expect (peak (mon) > 0.1f);
             expectWithinAbsoluteError (peak (pre), 0.0f, 1.0e-6f);
             expectWithinAbsoluteError (peak (post), 0.0f, 1.0e-6f);
+        }
+
+        beginTest ("44.1 kHz clip remains audible in 48 kHz engine");
+        {
+            const auto wav441 = makeTestWav (4096, 44100);
+            expect (pads.loadFile (2, wav441).isEmpty());
+            auto s = pads.getPadState (2);
+            s.route = AudioPadRoute::postFx;
+            pads.setPadState (2, s, false);
+            pads.triggerPad (2);
+            pads.render (pre, post, mon, 512);
+            expect (peak (post) > 0.1f);
+            wav441.deleteFile();
         }
 
         beginTest ("Loop keeps a short clip playing");

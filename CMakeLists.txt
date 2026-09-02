@@ -57,6 +57,7 @@ juce_add_binary_data(MicVSTData SOURCES
 target_sources(MicVST PRIVATE
     src/Main.cpp
     src/audio/AudioEngine.cpp
+    src/audio/SecondaryOutput.cpp
     src/audio/PluginChain.cpp
     src/audio/BuiltinEffects.cpp
     src/ui/MainComponent.cpp
@@ -103,6 +104,7 @@ target_sources(MicVSTTests PRIVATE
     tests/ScanTests.cpp
     tests/PickerTests.cpp
     tests/BuiltinEffectsTests.cpp
+    tests/Output2Tests.cpp
     src/audio/BuiltinEffects.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE

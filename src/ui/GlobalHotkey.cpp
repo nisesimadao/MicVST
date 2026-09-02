@@ -45,7 +45,9 @@ bool isGlobalHotkeyDown (const juce::String& description)
 {
    #if JUCE_WINDOWS
     if (description.trim().isEmpty()) return false;
-    auto parts = juce::StringArray::fromTokens (description, "+", "");
+
+    juce::StringArray parts;
+    parts.addTokens (description, "+", "");
     parts.trim();
     parts.removeEmptyStrings();
     if (parts.isEmpty()) return false;

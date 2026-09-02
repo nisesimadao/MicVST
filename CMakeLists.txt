@@ -29,6 +29,14 @@ add_library(MicVSTCore STATIC
 )
 target_compile_features(MicVSTCore PUBLIC cxx_std_17)
 target_include_directories(MicVSTCore PUBLIC src)
+# AudioPadEngine advertises these formats in the UI. JUCE always registers WAV/AIFF,
+# while MP3/FLAC/Ogg readers are conditional, so enable them explicitly for every
+# target that consumes MicVSTCore instead of relying on JUCE/Projucer defaults.
+target_compile_definitions(MicVSTCore PUBLIC
+    JUCE_USE_MP3AUDIOFORMAT=1
+    JUCE_USE_FLAC=1
+    JUCE_USE_OGGVORBIS=1
+)
 target_link_libraries(MicVSTCore PUBLIC
     juce::juce_audio_basics
     juce::juce_audio_formats

@@ -63,6 +63,17 @@ struct AudioPadEngineTest : juce::UnitTest
 
     void runTest() override
     {
+        beginTest ("Advertised Audio Pad formats are registered");
+        {
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            expect (formats.findFormatForFileExtension ("wav") != nullptr);
+            expect (formats.findFormatForFileExtension ("aiff") != nullptr);
+            expect (formats.findFormatForFileExtension ("mp3") != nullptr);
+            expect (formats.findFormatForFileExtension ("flac") != nullptr);
+            expect (formats.findFormatForFileExtension ("ogg") != nullptr);
+        }
+
         const auto wav = makeTestWav();
         expect (wav.existsAsFile());
 

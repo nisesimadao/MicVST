@@ -6,18 +6,12 @@
 #include "ui/TrayIcon.h"
 
 #if JUCE_WINDOWS
- // Bewusst kein <windows.h>: das Header pollutet nachfolgende JUCE-Header (Makrokonflikte
- // z.B. in juce_PushNotifications.h). Stattdessen nur die eine benötigte WinAPI-Funktion
- // per extern "C" deklarieren.
  extern "C" __declspec (dllimport) unsigned int __stdcall SetErrorMode (unsigned int);
- static constexpr unsigned int kSemFailCriticalErrors = 0x0001; // SEM_FAILCRITICALERRORS
- static constexpr unsigned int kSemNoGpFaultErrorBox  = 0x0002; // SEM_NOGPFAULTERRORBOX
- static constexpr unsigned int kSemNoOpenFileErrorBox  = 0x8000; // SEM_NOOPENFILEERRORBOX
- #include <excpt.h>   // SEH-Intrinsics (_exception_code) — bewusst ohne <windows.h>
+ static constexpr unsigned int kSemFailCriticalErrors = 0x0001;
+ static constexpr unsigned int kSemNoGpFaultErrorBox  = 0x0002;
+ static constexpr unsigned int kSemNoOpenFileErrorBox = 0x8000;
+ #include <excpt.h>
 
-// Enumeration mit SEH-Guard: Crasht eine Plugin-Klasse (WaveShell enthält hunderte),
-// stirbt nicht mehr der ganze Prozess — die bis dahin gefundenen Typen bleiben
-// nutzbar. Rückgabe 0 = sauber durchgelaufen, sonst der Exception-Code (NTSTATUS).
 static unsigned int findTypesWithSehGuard (juce::VST3PluginFormat& format,
                                            juce::OwnedArray<juce::PluginDescription>& types,
                                            const juce::String& path)
@@ -27,7 +21,7 @@ static unsigned int findTypesWithSehGuard (juce::VST3PluginFormat& format,
         format.findAllTypesForFile (types, path);
         return 0;
     }
-    __except (1 /* EXCEPTION_EXECUTE_HANDLER */)
+    __except (1)
     {
         return (unsigned int) _exception_code();
     }
@@ -40,21 +34,14 @@ public:
     const juce::String getApplicationName() override    { return "MicVST"; }
     const juce::String getApplicationVersion() override { return MICVST_VERSION; }
 
-    // Kind-Scanprozesse (--scan) laufen parallel zur Haupt-Instanz und dürfen nicht
-    // von der Single-Instance-Logik weggefangen werden.
     bool moreThanOneInstanceAllowed() override
     {
         return juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--scan");
     }
 
-    // Kindmodus: genau EIN VST3 scannen und die Beschreibungen als XML in die --out-Datei
-    // schreiben. Läuft in einem eigenen Prozess -> Hänger/Crashes können die App nie blockieren.
-    // Rückgabe = Exit-Code (0 nur bei mindestens einem gefundenen Plugin-Typ).
     static int runScanChildMode()
     {
        #if JUCE_WINDOWS
-        // Windows-Loader-Fehlerdialoge ("Ungültiges Bild", 0xC0000020) und Crash-Dialoge unterdrücken:
-        // eine kaputte Plugin-DLL soll still als Fehler enden, nicht als Modal-Dialog.
         SetErrorMode (kSemFailCriticalErrors | kSemNoGpFaultErrorBox | kSemNoOpenFileErrorBox);
        #endif
 
@@ -103,34 +90,24 @@ public:
         juce::Logger::setCurrentLogger (logger.get());
 
         const bool silent = commandLine.contains ("--tray");
-
         engine = std::make_unique<AudioEngine>();
 
-        // Gespeicherten Zustand laden; NUR beim allerersten Start (noch keine config.xml)
-        // Devices vorbelegen. Sobald eine Config existiert, gilt sie verbatim — sonst würde
-        // eine bewusst auf "none" gesetzte Output-Auswahl beim Neustart wieder überschrieben.
         const bool firstRun = ! configFile().existsAsFile();
         MicVSTState state = loadState();
 
-        // Auto-Update-Check-Zustand übernehmen (Default: aus, nie gefragt).
         updateCheckEnabled  = state.updateCheckEnabled;
         updateCheckAsked    = state.updateCheckAsked;
         lastNotifiedVersion = state.lastNotifiedVersion;
 
-        // Custom-VST3-Ordner übernehmen, dann Cache laden (vor applyState und vor der UI).
         engine->setPluginFolders (state.pluginFolders);
-        engine->loadPluginCache();   // KEIN synchroner Scan mehr — Cache reicht zum Start
+        engine->loadPluginCache();
         if (firstRun)
         {
-            // Output bevorzugt ein virtuelles Kabel (VB-Cable & Co): die App liefert dann
-            // direkt an ein virtuelles Mikro, ohne zusätzliches Ausgabe-Plugin. Kein Kabel
-            // gefunden -> Output bleibt leer ("none"), die UI weist auf den Download hin.
             state.outputDevice = engine->detectCableOutput();
             juce::Logger::writeToLog (state.outputDevice.isEmpty()
                 ? "No virtual cable found -> output 'none'"
                 : "Host output (cable) = " + state.outputDevice);
 
-            // Input: System-Standardmikrofon, sonst erstes verfügbares Eingangsgerät.
             auto& dm = engine->getDeviceManager();
             dm.setCurrentAudioDeviceType (dm.preferredTypeName(), true);
             if (auto* type = dm.getCurrentAudioDeviceTypeObject())
@@ -146,7 +123,7 @@ public:
         engine->applyState (state);
 
         mainWindow = std::make_unique<MainWindow> ("MicVST", *engine, state.windowState);
-        mainWindow->setVisible (! silent);   // Autostart (--tray): unsichtbar, nur Tray
+        mainWindow->setVisible (! silent);
 
         tray = std::make_unique<TrayIcon>();
         tray->onToggleWindow = [this] { toggleWindow(); };
@@ -154,26 +131,16 @@ public:
         tray->isAutostartOn  = [] { return AutostartRegistry::isEnabled(); };
         tray->setAutostart   = [] (bool on) { AutostartRegistry::setEnabled (on); };
 
-        // Beim Verstecken: einmaligen Tray-Hinweis zeigen und die aktuelle Fenstergröße sichern
-        // (X beendet nicht, daher hier persistieren, damit eine geänderte Größe nicht verloren geht).
         mainWindow->onHide = [this] { maybeShowTrayHint(); persistState(); };
-
-        // Erst JETZT (nach applyState) das Persistieren bei Geräte-Änderungen aktivieren,
-        // damit In-/Output-Auswahl gemerkt wird — auch ohne sauberes Beenden (X versteckt nur).
         engine->onDeviceChanged = [this] { persistState(); };
-        // UI-Änderungen (Plugin-Kette, Ordner) persistieren ebenfalls den Gesamtzustand —
-        // ein direktes saveState(captureState()) in der UI würde windowState/Update-Check resetten.
         engine->onStateChanged  = [this] { persistState(); };
-
         engine->onFactoryResetRequested = [this] { factoryReset(); };
 
-        // --- Auto-Update-Check verdrahten ---
         if (auto* mc = mainWindow->getContent())
         {
             mc->onUpdateCheckToggled = [this] (bool on) { updateCheckEnabled = on; persistState(); };
             mc->onUpdateFound = [this] (const juce::String& latestVersion, const juce::String&)
             {
-                // Tray-Bubble nur EINMAL pro neuer Version (der Fenster-Hinweis bleibt sowieso).
                 if (latestVersion == lastNotifiedVersion) return;
                 lastNotifiedVersion = latestVersion;
                 persistState();
@@ -181,18 +148,14 @@ public:
                     tray->showInfoBubble ("Update available",
                         "MicVST " + latestVersion + " is available - click the version number to update.");
             };
-            // Bei aktivem Check sofort einen Lauf starten (auch im stillen Autostart -> Tray-Bubble).
             mc->setUpdateCheckEnabled (updateCheckEnabled, true);
         }
 
-        // Altes Dead-Man's-Pedal aufräumen (ersetzt durch Skip-Liste im plugin_cache.xml).
         juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
             .getChildFile ("MicVST").getChildFile ("plugin_scan.tmp").deleteFile();
 
-        // Fenster + Tray stehen -> jetzt (und erst jetzt) im Hintergrund scannen.
         engine->startBackgroundScan();
 
-        // Erststart: einmalig nach Zustimmung fragen (nur mit sichtbarem Fenster).
         if (! silent && ! updateCheckAsked)
             askUpdateConsent();
     }
@@ -218,7 +181,6 @@ public:
     }
 
 private:
-    // Engine-Zustand (Geräte/Plugins) + Fenstergröße/-position + Update-Check-Zustand speichern.
     void persistState()
     {
         if (suppressPersist || engine == nullptr) return;
@@ -230,10 +192,6 @@ private:
         saveState (s);
     }
 
-    // "Reset app (clear all data)": Einstellungen + Plugin-Cache + Tray-Hinweis-Marker
-    // löschen und die App beenden. Kein Auto-Relaunch (Single-Instance-Logik würde die
-    // neue Instanz blocken); der Dialog kündigt den manuellen Neustart an. Der
-    // Autostart-Registry-Eintrag bleibt bewusst erhalten (sichtbare, eigene Einstellung).
     void factoryReset()
     {
         suppressPersist = true;
@@ -245,8 +203,6 @@ private:
         systemRequestedQuit();
     }
 
-    // Einmaliges Erststart-Popup: Zustimmung zum Update-Check einholen. Egal wie der Nutzer
-    // entscheidet -> "gefragt" wird gemerkt, also kommt der Dialog nie wieder.
     void askUpdateConsent()
     {
         updateCheckAsked = true;
@@ -265,7 +221,7 @@ private:
                 persistState();
                 if (mainWindow != nullptr)
                     if (auto* mc = mainWindow->getContent())
-                        mc->setUpdateCheckEnabled (yes, true);   // bei Ja: gleich prüfen
+                        mc->setUpdateCheckEnabled (yes, true);
             }));
     }
 
@@ -278,8 +234,6 @@ private:
         else      maybeShowTrayHint();
     }
 
-    // Einmaliger Tray-Hinweis (Marker in %APPDATA%\MicVST), damit Nutzer nicht denken,
-    // sie hätten die App beendet, wenn das Fenster verschwindet.
     void maybeShowTrayHint()
     {
         if (tray == nullptr) return;
@@ -297,26 +251,22 @@ private:
             : DocumentWindow (name, juce::Colours::darkgrey, DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            // resize-to-fit AUS: die Fenstergröße diktiert centreWithSize unten, nicht die
-            // Content-Größe. Sonst zieht der MainComponent (setSize im Ctor) die Startgröße
-            // über das Minimum hinaus.
             content = new MainComponent (engine);
             setContentOwned (content, false);
             setResizable (true, false);
-            // Mindestgröße = Startgröße (600x480); zusätzliche Höhe verlängert die Plugin-Liste.
-            setResizeLimits (600, 480, 1600, 1400);
-            // Letzte Größe/Position wiederherstellen (innerhalb der Resize-Limits), sonst zentriert
-            // auf Startgröße. restoreWindowStateFromString respektiert die gesetzten Limits.
+            // v1.4 has a collapsible 4x4 soundboard. A little more vertical room keeps the
+            // plugin rack useful even while Audio Pads are expanded.
+            setResizeLimits (600, 560, 1600, 1400);
             if (windowState.isNotEmpty())
                 restoreWindowStateFromString (windowState);
             else
-                centreWithSize (600, 480);
+                centreWithSize (600, 620);
         }
         std::function<void()> onHide;
         void closeButtonPressed() override { setVisible (false); if (onHide) onHide(); }
         MainComponent* getContent() const { return content; }
     private:
-        MainComponent* content = nullptr;   // gehört dem Fenster (setContentOwned), nur Zugriffszeiger
+        MainComponent* content = nullptr;
     };
 
     std::unique_ptr<juce::FileLogger> logger;
@@ -324,11 +274,10 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<TrayIcon> tray;
 
-    // Auto-Update-Check-Zustand (in config.xml persistiert, siehe persistState()).
     bool updateCheckEnabled = false;
     bool updateCheckAsked   = false;
     juce::String lastNotifiedVersion;
-    bool suppressPersist = false;   // Factory-Reset: nichts darf die gelöschte Config neu anlegen
+    bool suppressPersist = false;
 };
 
 START_JUCE_APPLICATION (MicVSTApplication)

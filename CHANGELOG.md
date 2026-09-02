@@ -4,6 +4,26 @@ All notable changes to MicVST are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-09-02
+
+### Added
+- **Audio Pads / Soundboard** with 16 pads in a collapsible 4x4 panel.
+- Drag-and-drop and file picker loading for WAV, MP3, FLAC, OGG and AIFF audio.
+- Simultaneous pad playback with realtime sample-rate conversion into the primary MicVST clock.
+- Per-pad volume, loop, fade-in, fade-out and retrigger behaviour (`Restart`, `Stop`, `Ignore`).
+- Three pad routing modes:
+  - `Post FX` mixes after the DSP/VST chain and goes to the virtual microphone.
+  - `Pre FX` mixes before the DSP/VST chain so the clip is processed by the same effects.
+  - `Output2 only` is audible only on the local monitor and never enters `CABLE Input`.
+- Global Windows pad hotkeys such as `F8`, `Numpad1`, `Ctrl+Shift+1` and `Alt+Q`, including while MicVST is hidden in the tray.
+- Pad naming, playback progress, subtle color presets, master pad volume and per-pad context menus.
+- Audio Pad state persistence including file path, route, hotkey, volume, loop, retrigger and fades.
+- Audio Pad unit tests that generate a real WAV file and verify Post FX / Pre FX / Output2-only buses, looping, fade-stop and config round-trip.
+
+### Changed
+- App and installer version bumped to 1.4.0.
+- Main How To guide now documents Audio Pads and the three routing modes.
+
 ## [1.3.0] - 2026-09-02
 
 ### Added
@@ -147,6 +167,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Portable, statically linked `.exe` (no installer, no Visual C++ Redistributable).
 - GitHub Actions CI: build + unit tests on every push/PR, release build on tag.
 
+[1.4.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.4.0
 [1.3.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.3.0
 [1.2.0]: https://github.com/nisesimadao/MicVST/releases/tag/v1.2.0
 [1.1.1]: https://github.com/nisesimadao/MicVST/releases/tag/v1.1.1

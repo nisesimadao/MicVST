@@ -1,18 +1,15 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_audio_utils/juce_audio_utils.h>   // AudioProcessorPlayer lebt in juce_audio_utils
+#include <juce_audio_utils/juce_audio_utils.h>
 #include "audio/Metering.h"
 #include "audio/PluginChain.h"
 #include "audio/MicVSTDeviceManager.h"
 #include "audio/SecondaryOutput.h"
+#include "audio/AudioPadEngine.h"
 #include "audio/ScanCoordinator.h"
 #include "state/Persistence.h"
 
-// Besitzt AudioDeviceManager + AudioProcessorGraph. Der Graph läuft über einen
-// internen AudioProcessorPlayer; AudioEngine bleibt der Device-Callback und
-// metert Input/Output rund um den Player herum. Ein zweiter, unabhängiger
-// AudioDeviceManager kann das fertig bearbeitete Signal optional auf Output2 spiegeln.
 class AudioEngine : private juce::AudioIODeviceCallback,
                     private juce::ChangeListener
 {
@@ -23,42 +20,32 @@ public:
     juce::String initialise (const juce::String& inputDeviceName,
                              const juce::String& outputDeviceName);
 
-    // Laufzeit-Geräteumschaltung (vom DevicePanel): setzt Geräte/Samplerate/Buffer neu,
-    // OHNE Graph + Plugin-Kette neu aufzubauen. sampleRate<=0 / bufferSize<=0 = unverändert.
     void setDeviceConfig (const juce::String& input, const juce::String& output,
                           double sampleRate, int bufferSize);
 
-    // Buffer-Wunsch des Users in Samples; 0 = Auto (Geräte-Default-Periode).
-    // Wird von applyState gesetzt und in captureState persistiert.
     void setPreferredBufferSize (int samples) { preferredBufferSize = samples; }
     int  getPreferredBufferSize() const       { return preferredBufferSize; }
 
-    // Sucht ausschließlich den offiziellen VB-CABLE-Renderendpunkt ("CABLE Input").
-    // MicVST verwaltet diesen Output automatisch; leer = VB-CABLE nicht installiert.
     juce::String detectCableOutput();
 
-    // Optionaler, frei wählbarer Monitoring-Ausgang. "" bedeutet Off. Output bleibt
-    // unabhängig davon fest auf CABLE Input, damit Discord/OBS weiter CABLE Output nutzen.
     juce::StringArray getOutput2DeviceNames() { return secondaryOutput.deviceNames(); }
     juce::String setOutput2Device (const juce::String& name) { return secondaryOutput.setDevice (name); }
     juce::String getOutput2Device() const { return secondaryOutput.desiredDevice(); }
     bool isOutput2Running() const { return secondaryOutput.isRunning(); }
 
-    MicVSTState captureState();            // liest Devices + Plugin-Kette + Blobs
-    void          applyState (const MicVSTState&);   // lädt Devices + Plugins + setStateInformation
+    AudioPadEngine& getAudioPads() { return audioPads; }
+    const AudioPadEngine& getAudioPads() const { return audioPads; }
 
-    bool isRunning() const;                 // true wenn ein Audio-Device offen ist und spielt
-    std::function<void()> onStatusChanged;  // wird bei Device-Änderungen aufgerufen (UI-Status)
-    std::function<void()> onDeviceChanged;  // wird bei Geräte-Änderungen aufgerufen (zum Persistieren)
+    MicVSTState captureState();
+    void applyState (const MicVSTState&);
 
-    // Von der UI bei Ketten-/Ordner-Änderungen gerufen. Die App persistiert dann den
-    // GESAMTEN Zustand (inkl. windowState + Update-Check-Feldern, die captureState nicht
-    // kennt) — ein direktes saveState(captureState()) würde diese Felder zurücksetzen.
+    bool isRunning() const;
+    std::function<void()> onStatusChanged;
+    std::function<void()> onDeviceChanged;
+
     std::function<void()> onStateChanged;
     void requestPersist() { if (onStateChanged) onStateChanged(); }
 
-    // Factory-Reset (UI-Menü): Die App löscht config + Plugin-Cache und beendet sich
-    // für einen frischen Erststart. Engine-seitig nur der Durchreich-Callback.
     std::function<void()> onFactoryResetRequested;
     void requestFactoryReset() { if (onFactoryResetRequested) onFactoryResetRequested(); }
 
@@ -68,19 +55,16 @@ public:
     juce::AudioPluginFormatManager& getFormatManager() { return formatManager; }
     juce::KnownPluginList&          getKnownPlugins()  { return knownPlugins; }
 
-    // --- Plugin-Scan (out-of-process, asynchron, gecacht) ---
-    void loadPluginCache();                    // beim Start VOR applyState aufrufen
-    // forceRescan: siehe filterFilesNeedingScan -- Dateien, die trotz aktuell aussehendem
-    // Cache erneut versucht werden sollen (retrySkippedPlugins nach Crash-Rescue).
+    void loadPluginCache();
     void startBackgroundScan (int timeoutMs = ScanCoordinator::defaultTimeoutMs,
                               const juce::StringArray& forceRescan = {});
-    void rescanAllPlugins();                   // Cache + Skip-Liste leeren, alles neu
-    void retrySkippedPlugins();                // nur Skip-Liste leeren, mit großem Timeout scannen
-    void skipCurrentScanFile();                // Skip-Button: aktuelle Datei überspringen
+    void rescanAllPlugins();
+    void retrySkippedPlugins();
+    void skipCurrentScanFile();
     bool isScanning() const { return scanner != nullptr; }
     const juce::Array<SkippedPlugin>& getSkippedPlugins() const { return skippedPlugins; }
-    std::function<void (int, int, juce::String)> onScanProgress;   // current(1-based), total, name
-    std::function<void()> onScanFinished;      // nach Cache-Save + ggf. Ketten-Restore
+    std::function<void (int, int, juce::String)> onScanProgress;
+    std::function<void()> onScanFinished;
 
     void addPluginFolder (const juce::String& folder);
     void removePluginFolder (const juce::String& folder);
@@ -92,12 +76,9 @@ public:
     LevelReading inputLevel()  const { return inputMeter.read(); }
     LevelReading outputLevel() const { return outputMeter.read(); }
 
-    void rebuildGraph();   // Graph-Verbindungen neu aufbauen (inkl. Mono->Stereo-Fanout)
+    void rebuildGraph();
 
 private:
-    // Playhead, der dem Graph (und damit allen Plugins) durchgehend "Transport läuft"
-    // meldet. Nötig, weil der Default-Playhead des AudioProcessorPlayer isPlaying NICHT
-    // setzt — manche Routing/Streaming-Plugins senden aber nur bei laufendem Transport.
     struct PlayingHead : juce::AudioPlayHead
     {
         std::atomic<juce::int64> samples { 0 };
@@ -138,6 +119,7 @@ private:
 
     MicVSTDeviceManager deviceManager;
     SecondaryOutput secondaryOutput;
+    AudioPadEngine audioPads;
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer player;
     std::unique_ptr<PluginChain> pluginChain;
@@ -149,6 +131,12 @@ private:
     juce::Array<PluginEntryState> pendingPlugins;
     bool rescanQueued = false;
     int preferredBufferSize = 0;
+
+    // Fixed-size scratch buffers prepared when the primary device starts. Audio Pads use
+    // these buses without allocating on the realtime callback.
+    juce::AudioBuffer<float> padPreFx, padPostFx, padOutput2Only;
+    juce::AudioBuffer<float> mixedInput, output2Mix;
+    int padScratchCapacity = 0;
 
     LevelMeter inputMeter, outputMeter;
 };

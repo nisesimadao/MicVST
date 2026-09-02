@@ -7,19 +7,24 @@ namespace
 
 DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
 {
-    for (auto* l : { &inLabel, &outLabel })
+    for (auto* l : { &inLabel, &outLabel, &out2Label })
         l->setJustificationType (juce::Justification::centredLeft);
 
-    addAndMakeVisible (inLabel);  addAndMakeVisible (inBox);
-    addAndMakeVisible (outLabel); addAndMakeVisible (outBox);
+    addAndMakeVisible (inLabel);   addAndMakeVisible (inBox);
+    addAndMakeVisible (outLabel);  addAndMakeVisible (outBox);
+    addAndMakeVisible (out2Label); addAndMakeVisible (out2Box);
 
     inInfo.setTooltip ("Select your physical microphone here");
     outInfo.setTooltip ("Managed automatically by MicVST using VB-CABLE by VB-Audio (donationware). "
                         "Discord/OBS/Zoom should use \"CABLE Output\" as their microphone input.");
+    out2Info.setTooltip ("Optional monitor output. Sends the same processed MicVST signal to "
+                         "headphones, speakers, an audio interface, etc. Set to Off if you do not "
+                         "want local monitoring. Using speakers near the mic can cause feedback.");
     addAndMakeVisible (inInfo);
     addAndMakeVisible (outInfo);
+    addAndMakeVisible (out2Info);
 
-    // VB-CABLE's render endpoint is an implementation detail, not a routing choice.
+    // Primary output is an implementation detail; Output2 is the user's free routing choice.
     outBox.setEnabled (false);
 
     bufInfo.setTooltip ("Buffer size in samples. Smaller = lower latency, higher CPU risk. "
@@ -34,11 +39,12 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     statusLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
     addAndMakeVisible (statusLabel);
 
-    inBox.onChange  = [this] { apply(); };
+    inBox.onChange = [this] { apply(); };
+    out2Box.onChange = [this] { applyOutput2(); };
 
     engine.getDeviceManager().addChangeListener (this);
     refresh();
-    startTimer (500);   // Info-Zeile (v. a. Geräte-/Plugin-Latenz) live halten
+    startTimer (500);
 }
 
 DevicePanel::~DevicePanel()
@@ -49,20 +55,21 @@ DevicePanel::~DevicePanel()
 
 void DevicePanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    refresh();   // Gerät extern geändert (z. B. ab-/angesteckt) -> Combos spiegeln
+    refresh();
 }
 
 void DevicePanel::timerCallback()
 {
-    updateStatus();   // nur die Info-Zeile; Combos nicht anfassen (User könnte gerade wählen)
+    updateStatus();
 }
 
 void DevicePanel::refresh()
 {
-    updating = true;   // verhindert, dass das Befüllen apply() auslöst
+    updating = true;
 
     inBox.clear (juce::dontSendNotification);
     outBox.clear (juce::dontSendNotification);
+    out2Box.clear (juce::dontSendNotification);
 
     auto& dm = engine.getDeviceManager();
     const auto setup = dm.getAudioDeviceSetup();
@@ -74,7 +81,7 @@ void DevicePanel::refresh()
         const int si = ins.indexOf (setup.inputDeviceName);
         if (si >= 0) inBox.setSelectedId (si + 1, juce::dontSendNotification);
 
-        // Output is read-only: show only the effective VB-CABLE routing state.
+        // Primary Output is read-only: show only the effective VB-CABLE routing state.
         if (setup.outputDeviceName.containsIgnoreCase (kVBCableRenderEndpoint))
         {
             outBox.addItem (setup.outputDeviceName, 1);
@@ -87,7 +94,34 @@ void DevicePanel::refresh()
         }
     }
 
-    // Buffer-Zeile: nur wenn das aktuelle Gerät mehrere Größen anbietet (Low-Latency-Modus).
+    // Output2 is independent from the primary device pair. "Off" is always available.
+    out2Box.addItem ("Off", 1);
+    output2Names = engine.getOutput2DeviceNames();
+    for (int i = 0; i < output2Names.size(); ++i)
+        out2Box.addItem (output2Names[i], i + 2);
+
+    const auto desiredOutput2 = engine.getOutput2Device();
+    if (desiredOutput2.isEmpty())
+    {
+        out2Box.setSelectedId (1, juce::dontSendNotification);
+    }
+    else
+    {
+        const int index = output2Names.indexOf (desiredOutput2);
+        if (index >= 0)
+        {
+            out2Box.setSelectedId (index + 2, juce::dontSendNotification);
+        }
+        else
+        {
+            // Keep a disconnected USB headset/interface visible instead of silently erasing
+            // the saved selection. Reconnecting/reselecting it can recover the same setting.
+            out2Box.addItem (desiredOutput2 + " (unavailable)", output2Names.size() + 2);
+            out2Box.setSelectedId (output2Names.size() + 2, juce::dontSendNotification);
+        }
+    }
+
+    // Buffer row belongs only to the primary mic -> VB-CABLE pair.
     bufBox.clear (juce::dontSendNotification);
     auto* dev = dm.getCurrentAudioDevice();
     const auto sizes = dev != nullptr ? dev->getAvailableBufferSizes() : juce::Array<int>();
@@ -103,22 +137,16 @@ void DevicePanel::refresh()
         const int idx = sizes.indexOf (pref);
         bufBox.setSelectedId (pref > 0 && idx >= 0 ? idx + 2 : 1, juce::dontSendNotification);
 
-        // Der gewählte Wert existiert beim aktuellen Gerät nicht mehr (z. B. Gerät
-        // gewechselt) -> Anzeige fällt auf "Auto" zurück, also muss auch der Engine-
-        // Zustand nachziehen, sonst würde captureState() einen nie bestätigten Wert
-        // persistieren. Nur bei sichtbarer Zeile: bei !showBuf bleibt die Wahl erhalten
-        // (z. B. USB-Interface kurz getrennt) -- JUCE klemmt unpassende Größen ohnehin.
         if (pref > 0 && idx < 0)
             engine.setPreferredBufferSize (0);
     }
     if (showBuf != bufBox.isVisible())
     {
         bufLabel.setVisible (showBuf); bufBox.setVisible (showBuf); bufInfo.setVisible (showBuf);
-        if (auto* p = getParentComponent()) p->resized();   // MainComponent-Layout nachziehen
+        if (auto* p = getParentComponent()) p->resized();
     }
 
     updateStatus();
-
     updating = false;
 }
 
@@ -137,8 +165,6 @@ void DevicePanel::updateStatus()
         st << "   |   " << juce::String (sr, 0) << " Hz";
         st << "   |   buffer " << juce::String (buf);
 
-        // Ende-zu-Ende durch MicVST: Geräte-Latenz (In+Out) + ein Block + Plugin-Latenz
-        // des Graphen (Lookahead-Plugins melden diese via getLatencySamples()).
         const int    pluginLatency = engine.getGraph().getLatencySamples();
         const double lat = (dev->getInputLatencyInSamples() + dev->getOutputLatencyInSamples()
                             + buf + pluginLatency) / sr * 1000.0;
@@ -147,6 +173,11 @@ void DevicePanel::updateStatus()
 
     st << (driverReady ? "   |   virtual mic: CABLE Output"
                        : "   |   VB-CABLE missing / reboot required");
+
+    const auto out2 = engine.getOutput2Device();
+    if (out2.isNotEmpty())
+        st << (engine.isOutput2Running() ? "   |   Output2: " : "   |   Output2 unavailable: ") << out2;
+
     statusLabel.setText (st, juce::dontSendNotification);
 }
 
@@ -162,8 +193,6 @@ void DevicePanel::apply()
     const int ii = inBox.getSelectedId() - 1;
     juce::String input = juce::isPositiveAndBelow (ii, ins.size()) ? ins[ii] : juce::String();
 
-    // Buffer-Wunsch: id 1 = Auto (0). Bei Auto den Geräte-Default explizit setzen,
-    // weil setDeviceConfig 0 als "unverändert" interpretiert (sonst kein Zurückstellen).
     int buf = 0;
     if (bufBox.isVisible() && bufBox.getSelectedId() >= 2)
     {
@@ -176,9 +205,29 @@ void DevicePanel::apply()
     auto* curDev = dm.getCurrentAudioDevice();
     const int effective = buf > 0 ? buf : (curDev != nullptr ? curDev->getDefaultBufferSize() : 0);
 
-    // The output argument is intentionally ignored by AudioEngine: it always uses
-    // VB-CABLE's CABLE Input endpoint when the backend is installed.
+    // Primary output remains hard-wired to CABLE Input.
     engine.setDeviceConfig (input, {}, 0.0, effective);
+}
+
+void DevicePanel::applyOutput2()
+{
+    if (updating) return;
+
+    juce::String requested;
+    const int id = out2Box.getSelectedId();
+    if (id >= 2)
+    {
+        const int index = id - 2;
+        if (juce::isPositiveAndBelow (index, output2Names.size()))
+            requested = output2Names[index];
+        else
+            requested = engine.getOutput2Device(); // preserve an unavailable saved device.
+    }
+
+    const auto err = engine.setOutput2Device (requested);
+    if (err.isNotEmpty())
+        juce::Logger::writeToLog (err);
+    updateStatus();
 }
 
 void DevicePanel::resized()
@@ -193,19 +242,20 @@ void DevicePanel::resized()
         return a;
     };
 
-    // Label + "?"-Icon in der Label-Spalte, danach die ComboBox.
-    auto labelWithInfo = [labelW] (juce::Rectangle<int> r, juce::Label& lbl, InfoIcon& info)
+    auto labelWithInfo = [labelW] (juce::Rectangle<int> area, juce::Label& lbl, InfoIcon& info)
     {
-        auto col = r.removeFromLeft (labelW);
+        auto col = area.removeFromLeft (labelW);
         info.setBounds (col.removeFromRight (18).reduced (2));
         lbl.setBounds (col);
-        return r;
+        return area;
     };
 
     auto inRow = row();
     inBox.setBounds (labelWithInfo (inRow, inLabel, inInfo));
     auto outRow = row();
     outBox.setBounds (labelWithInfo (outRow, outLabel, outInfo));
+    auto out2Row = row();
+    out2Box.setBounds (labelWithInfo (out2Row, out2Label, out2Info));
 
     if (bufBox.isVisible())
     {
@@ -213,11 +263,11 @@ void DevicePanel::resized()
         bufBox.setBounds (labelWithInfo (bufRow, bufLabel, bufInfo));
     }
 
-    statusLabel.setBounds (row());   // dauerhafte Info-Zeile unter den Geräten
+    statusLabel.setBounds (row());
 }
 
 int DevicePanel::preferredHeight() const
 {
-    // 3 Zeilen à 26 + 2 Lücken à 4 = 86; Buffer-Zeile sichtbar -> 4 Zeilen + 3 Lücken = 116.
-    return bufBox.isVisible() ? 116 : 86;
+    // Input + Output + Output2 + status = 4 rows; optional primary Buffer = +1 row.
+    return bufBox.isVisible() ? 146 : 116;
 }

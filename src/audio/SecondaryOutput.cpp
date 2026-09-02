@@ -33,9 +33,13 @@ bool SecondaryOutput::isRunning() const
 
 juce::StringArray SecondaryOutput::deviceNames()
 {
-    deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
+    // Do not re-select the device type just to refresh a ComboBox: doing that while
+    // Output2 is running could unnecessarily tear down/re-open the monitor endpoint.
+    if (deviceManager.getCurrentAudioDeviceTypeObject() == nullptr)
+        deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
+
     juce::StringArray result;
-    if (auto* type = deviceManager.getCurrentDeviceTypeObject())
+    if (auto* type = deviceManager.getCurrentAudioDeviceTypeObject())
     {
         type->scanForDevices();
         result = type->getDeviceNames (false /* output */);
@@ -66,7 +70,7 @@ juce::String SecondaryOutput::setDevice (const juce::String& name)
     }
 
     deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
-    auto* type = deviceManager.getCurrentDeviceTypeObject();
+    auto* type = deviceManager.getCurrentAudioDeviceTypeObject();
     if (type == nullptr)
     {
         const juce::String err = "Output2: no Windows audio device type available";

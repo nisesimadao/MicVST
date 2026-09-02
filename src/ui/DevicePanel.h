@@ -18,11 +18,12 @@ struct InfoIcon : juce::Component, juce::SettableTooltipClient
     }
 };
 
-// Kompakte Geräteauswahl: Input ist frei wählbar; Output zeigt nur den von MicVST
-// automatisch verwalteten VB-CABLE-Endpunkt (CABLE Input) und ist nicht editierbar.
-// Darunter optional eine Buffer-Zeile: nur sichtbar, wenn das Gerätepaar im
-// Low-Latency-Modus mehr als eine Buffer-Größe meldet ("Auto" = Geräte-Default).
-// Zuunterst eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).
+// Kompakte Geräteauswahl:
+// - Input: physisches Mikrofon
+// - Output: MicVST-verwaltetes CABLE Input (read-only)
+// - Output 2: optionaler frei wählbarer Monitoring-Ausgang (Kopfhörer/Lautsprecher/etc.)
+// Darunter optional eine Buffer-Zeile für den primären Mic->VB-CABLE-Pfad und eine
+// dauerhaft sichtbare Statuszeile.
 class DevicePanel : public juce::Component,
                     private juce::ChangeListener,
                     private juce::Timer
@@ -32,23 +33,26 @@ public:
     ~DevicePanel() override;
     void resized() override;
 
-    int preferredHeight() const;   // 3 Zeilen, +1 wenn die Buffer-Zeile sichtbar ist
+    int preferredHeight() const;
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
-    void refresh();        // Input/Output-Combos aus dem aktuellen Setup neu füllen
-    void updateStatus();   // nur die Info-Zeile (Active / Samplerate / Buffer / Latenz)
-    void apply();          // aktuelle Auswahl -> AudioEngine
+    void refresh();
+    void updateStatus();
+    void apply();
+    void applyOutput2();
 
     AudioEngine& engine;
-    juce::Label    inLabel  { {}, "Input" },  outLabel { {}, "Output" };
-    InfoIcon       inInfo, outInfo;
-    juce::ComboBox inBox, outBox;
-    juce::Label    bufLabel { {}, "Buffer" };
-    InfoIcon       bufInfo;
-    juce::ComboBox bufBox;
-    juce::Label    statusLabel;   // Active / Samplerate / Buffer / Latenz (immer sichtbar)
+    juce::Label inLabel { {}, "Input" }, outLabel { {}, "Output" }, out2Label { {}, "Output 2" };
+    InfoIcon inInfo, outInfo, out2Info;
+    juce::ComboBox inBox, outBox, out2Box;
+    juce::StringArray output2Names;
 
-    bool updating = false;        // Re-entrancy-Guard beim Befüllen
+    juce::Label bufLabel { {}, "Buffer" };
+    InfoIcon bufInfo;
+    juce::ComboBox bufBox;
+    juce::Label statusLabel;
+
+    bool updating = false;
 };

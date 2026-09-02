@@ -24,26 +24,21 @@
 物理マイク
    ↓
 MicVST
-   ├ AutoTune
+   ├ AutoTune / Pitch Shift / Deep Voice
    ├ Wah / Auto Wah
-   ├ Unison
-   ├ Chorus
-   ├ Delay
-   ├ Reverb
-   ├ Deep Voice / Robot / Radio / Bitcrusher
+   ├ Unison / Chorus
+   ├ Delay / Reverb
+   ├ Robot / Radio / Bitcrusher
    ├ 外部VST3（EQ / Compressor / Noise Suppression など）
    └ 好きな順番で何個でもチェーン
    ↓
-CABLE Input
-   ↓
-VB-CABLE
-   ↓
-CABLE Output
-   ↓
-Discord / OBS / Zoom / ブラウザ / ゲーム など
+   ├─ Output  → CABLE Input → CABLE Output → Discord / OBS / Zoom / ゲーム
+   │
+   └─ Output 2（任意）→ ヘッドホン / スピーカー / Audio Interface
 ```
 
-Discordなどから見ると、MicVSTで加工された音は普通のマイクと同じように **`CABLE Output`** として見えます。
+**Output** は仮想マイク用としてMicVSTが自動管理します。  
+**Output 2** はv1.3.0から追加された自由なモニター出力で、加工後の自分の声を別の再生デバイスでも聞けます。
 
 ### 主な機能
 
@@ -55,8 +50,9 @@ Discordなどから見ると、MicVSTで加工された音は普通のマイク�
 - **プラグインごとのレイテンシ表示**
 - **Input / Outputレベルメーター**
 - **現在の推定レイテンシ表示**
+- **Output 2による加工後音声のローカルモニター**
 - **VST3フォルダの追加・管理**
-- **パラメータ・並び順・Bypass状態を自動保存**
+- **パラメータ・並び順・Bypass・Output2設定を自動保存**
 - **壊れたVST3があっても本体を巻き込みにくい別プロセススキャン**
 - **システムトレイ常駐**
 - **Windows起動時の自動起動**
@@ -73,7 +69,7 @@ Discordなどから見ると、MicVSTで加工された音は普通のマイク�
 
 | ファイル | おすすめする人 |
 | --- | --- |
-| **`MicVST-Setup-1.2.0.exe`** | 初めて使う人。VB-CABLEが無ければセットアップ中に自動導入します |
+| **`MicVST-Setup-1.3.0.exe`** | 初めて使う人。VB-CABLEが無ければセットアップ中に自動導入します |
 | **`MicVST-portable.exe`** | **すでにVB-CABLEが入っている人**。インストール不要でそのまま起動できます |
 
 ### Setup版の動作
@@ -90,16 +86,19 @@ VB-CABLEを初めて導入した直後は、Windowsの再起動が必要にな�
 
 # 使い方 — 3ステップ
 
-## 1. 物理マイクを選ぶ
+## 1. デバイスを選ぶ
 
-MicVST上部の **Input** から使いたいマイクを選択します。
+MicVST上部でデバイスを設定します。
 
 ```text
-Input  : あなたの物理マイク
-Output : CABLE Input  ← MicVSTが自動管理
+Input    : あなたの物理マイク
+Output   : CABLE Input         ← MicVSTが自動管理・変更不可
+Output 2 : Off / ヘッドホン等  ← 任意
 ```
 
-Outputは基本的に触る必要がありません。
+通常は **Inputだけ選べば動きます**。Outputは触る必要がありません。
+
+加工後の自分の声を聞きたい場合だけ **Output 2** を設定してください。
 
 ## 2. DSP / VST3を追加する
 
@@ -133,6 +132,72 @@ OBS / Zoom / ブラウザ / ゲーム内VCでも同じです。
 
 ---
 
+# Output 2 — 加工後の声を自分でも聞く
+
+v1.3.0から、通常の **Output** とは別に **Output 2** を追加しました。
+
+Outputは常にVB-CABLEへ送るための内部ルートです。一方Output2はユーザーが自由に選べます。
+
+### 例
+
+```text
+Input    : HyperX QuadCast
+Output   : CABLE Input
+Output 2 : Headphones (USB DAC)
+```
+
+この場合：
+
+```text
+HyperX QuadCast
+      ↓
+MicVST DSP / VST3
+      ├→ CABLE Input → Discord
+      └→ USB DAC → 自分のヘッドホン
+```
+
+### 選べるもの
+
+Windowsの再生デバイスであれば、例えば次を選択できます。
+
+- ヘッドホン
+- USB DAC
+- オーディオインターフェース
+- モニタースピーカー
+- HDMI / DisplayPort Audio
+- Bluetooth Audio
+
+`CABLE Input` 自体はPrimary Outputですでに使うため、Output2一覧からは除外しています。
+
+### Off
+
+ローカルモニターが不要なら **Output 2 = Off** にしてください。これがデフォルトです。
+
+### OutputとOutput2のサンプルレートが違ってもOK
+
+Output2はPrimary Outputとは別のWASAPIデバイスとして動作します。
+
+例えば：
+
+```text
+MicVST / CABLE Input : 48000 Hz
+Headphones Output2  : 44100 Hz
+```
+
+でも動作できるよう、Output2側で軽量なリサンプリングを行います。また別々のオーディオデバイスはクロック速度が微妙に違うため、バッファ量を見ながらごく小さく読み取り速度を補正します。
+
+### Output2のレイテンシ
+
+Output2は仮想マイク経路を止めないことを優先し、独立した小さな安全バッファを持っています。目安は **約20ms + Output2デバイス自身のバッファ**です。
+
+つまりOutput2は主に「加工結果を確認する」「自分の声をモニターする」用途です。仮想マイク本体のCABLE Output経路にこの追加バッファは入りません。
+
+> **注意:** Output2にスピーカーを選び、その音が物理マイクへ戻るとハウリングする場合があります。自声モニターにはヘッドホン推奨です。
+
+Output2の選択も自動保存されます。USB DACなどを一時的に抜いても設定名は保持され、UIでは `unavailable` と表示されます。
+
+---
+
 # MicVST独自の内蔵DSP
 
 外部VST3を1つも入れなくても声を加工できます。
@@ -161,40 +226,27 @@ OBS / Zoom / ブラウザ / ゲーム内VCでも同じです。
 
 ### Pitch Shift
 
-声全体の音程を上下します。
-
 - **Semitones:** -12〜+12半音
 - **0.1半音単位**
 - **Mix**
 
 ### Deep Voice
 
-低い声を作るためのPitch Shift派生エフェクトです。
-
 - **Depth:** -12〜-1半音
 - **Warmth:** 低域寄りの丸さ / サチュレーション感
 - **Mix**
 
-### Unison — NEW in v1.2.0
+### Unison
 
-声を複数コピーして少しずつ音程・タイミング・左右位置をずらし、**一人の声を太く広げる**エフェクトです。
-
-単なるステレオ拡張ではなく、MicVSTのPitch Shifterを複数並列で動かします。
+声を複数コピーして少しずつ音程・タイミング・左右位置をずらし、一人の声を太く広げます。
 
 | パラメータ | 内容 |
 | --- | --- |
 | **Voices** | 2〜8声 |
 | **Detune** | 各声の音程差 0〜40 cent |
-| **Stereo spread** | 各声を左右へ広げる量 |
-| **Voice stagger** | 各声のタイミング差 0〜30ms |
+| **Stereo spread** | 左右へ広げる量 |
+| **Voice stagger** | タイミング差 0〜30ms |
 | **Mix** | 原音とのブレンド |
-
-**向いている用途**
-
-- 声を太くする
-- 複数人っぽい質感
-- Choir / Hyperpop系の広い声
-- Chorusより強い広がり
 
 8 Voicesは他の内蔵DSPよりCPU負荷が高めです。
 
@@ -202,19 +254,15 @@ OBS / Zoom / ブラウザ / ゲーム内VCでも同じです。
 
 ## Modulation系
 
-### Wah / Auto Wah — NEW in v1.2.0
+### Wah / Auto Wah
 
 いわゆる **「ワウワウ」するフィルター**です。
 
-3つのモードがあります。
-
 | Mode | 動き |
 | --- | --- |
-| **Envelope** | 声の大きさに合わせてフィルターが開閉。喋ると「ワァウ」と動く |
-| **LFO** | 一定周期で自動的に「ワウ↑ワウ↓」する |
-| **Manual** | フィルター位置を固定して手動調整 |
-
-主なパラメータ：
+| **Envelope** | 声量に合わせてフィルターが開閉 |
+| **LFO** | 一定周期で自動的にワウワウする |
+| **Manual** | フィルター位置を固定 |
 
 - **Base frequency:** 180〜1400Hz
 - **Sweep range:** 200〜3200Hz
@@ -224,52 +272,40 @@ OBS / Zoom / ブラウザ / ゲーム内VCでも同じです。
 - **Manual position**
 - **Mix**
 
-普通の声でも変化がかなり分かりやすいエフェクトです。
+### Chorus
 
-### Chorus — NEW in v1.2.0
-
-数ms〜数十msの短い遅延時間をLFOで揺らし、声に**厚み・揺れ・ステレオ感**を加えます。
+数ms〜数十msの短い遅延をLFOで揺らし、声に厚み・揺れ・ステレオ感を加えます。
 
 - **Rate:** 0.05〜8Hz
 - **Depth:** 0〜15ms
 - **Base delay:** 2〜30ms
 - **Feedback:** 0〜70%
-- **Stereo:** 左右LFOの位相差
+- **Stereo**
 - **Mix**
-
-Unisonより軽く、自然に広げたい時に向いています。
 
 ---
 
 ## Space系
 
-### Delay — NEW in v1.2.0
-
-声を遅れて繰り返すエコーです。
+### Delay
 
 | パラメータ | 内容 |
 | --- | --- |
 | **Time** | 20〜1500ms |
-| **Feedback** | 繰り返し回数 / 減衰量 |
+| **Feedback** | 繰り返し量 |
 | **Mode** | Stereo / Ping-Pong |
 | **Feedback low cut** | エコーの低域を削る |
 | **Feedback high cut** | エコーの高域を削る |
 | **Mix** | 原音との割合 |
 
-**Ping-Pong**では左右を行き来するようにFeedbackします。
+### Reverb
 
-### Reverb — NEW in v1.2.0
-
-部屋やホールのような残響を加えます。軽量なSchroeder系構成をMicVST向けに調整しています。
-
-- **Room size:** 部屋の大きさ
+- **Room size**
 - **Decay:** 0.20〜8秒
 - **Pre-delay:** 0〜120ms
-- **Damping:** 残響の高域減衰
-- **Stereo width:** 残響の左右の広さ
+- **Damping**
+- **Stereo width**
 - **Mix**
-
-声を自然に馴染ませる薄いReverbから、かなり長い残響まで作れます。
 
 ---
 
@@ -277,15 +313,11 @@ Unisonより軽く、自然に広げたい時に向いています。
 
 ### Robot
 
-リングモジュレーション系処理で機械・ロボット声を作ります。
-
 - **Carrier:** 35〜320Hz
 - **Drive:** 0〜24dB
 - **Mix**
 
 ### Radio / Walkie-Talkie
-
-無線・トランシーバー・古い通信機のような音です。
 
 - **Low Cut:** 120〜900Hz
 - **High Cut:** 1.8〜9kHz
@@ -293,8 +325,6 @@ Unisonより軽く、自然に広げたい時に向いています。
 - **Static:** 無線ノイズ量
 
 ### Bitcrusher
-
-ビット深度と実質サンプルレートを落として荒いデジタル音にします。
 
 - **Bit Depth:** 2〜16bit
 - **Sample Rate:** 1〜48kHz
@@ -308,8 +338,6 @@ Unisonより軽く、自然に広げたい時に向いています。
 
 - **Mono → Stereo** — モノラル音声をステレオチェーンへ送る
 - **Stereo → Mono** — ステレオチェーンをモノラルへ戻す
-
-必要な場所だけステレオ化できるので、不要な区間をモノラルで処理してCPU負荷を抑えられます。
 
 ---
 
@@ -363,15 +391,7 @@ Bitcrusher
 Delay
 ```
 
-## 無線・ゲーム内通信風
-
-```text
-Radio / Walkie-Talkie
-  ↓
-Delay（薄め）
-```
-
-エフェクトは順番によってかなり音が変わります。例えば **Reverb → Bitcrusher** と **Bitcrusher → Reverb** は全く違う質感になります。
+エフェクトは順番によってかなり音が変わります。
 
 ---
 
@@ -420,7 +440,7 @@ MicVSTではプラグインスキャンを**メインアプリとは別プロセ
 
 各エフェクト行にも、そのプラグイン単体のレイテンシをms単位で表示します。
 
-MicVSTは主に **48kHzのリアルタイム音声処理**を想定しています。
+MicVSTは主に **48kHzのリアルタイム音声処理**を想定しています。Output2だけ別サンプルレートでも利用できます。
 
 ---
 
@@ -446,7 +466,7 @@ MicVSTは常駐利用に対応しています。
 1. Setup版インストール時の **Start MicVST with Windows**
 2. MicVST本体 / トレイメニューの **Run at Windows startup**
 
-有効時は `--tray` で起動するため、Windowsログイン直後に大きなウィンドウが開くことはありません。
+有効時は `--tray` で起動します。
 
 ---
 
@@ -456,11 +476,7 @@ MicVSTは常駐利用に対応しています。
 
 ![MicVST main window](assets/screenshot.png)
 
-画面上部でInput / Output・バッファ・状態を確認でき、中央にInput / Outputメーター、下部にエフェクトチェーンが表示されます。
-
-内蔵DSPやVST3を追加すると、チェーン上にエフェクト名・レイテンシ・Bypass・削除ボタンが並びます。
-
-> 現在リポジトリにある実機スクリーンショットはこの1枚です。DSP設定画面やSetup画面のスクリーンショットも今後追加できます。
+v1.3.0では上部のデバイス欄に **Output 2** が追加されます。スクリーンショットは旧UIのため、実際の最新版ではInput / Output / Output 2の3行になります。
 
 ---
 
@@ -497,6 +513,7 @@ VB-CABLEの公式署名済みドライバをそのまま利用するため、Mic
 以下は自動保存されます。
 
 - 使用する物理マイク
+- **Output2の選択**
 - エフェクトの順番
 - VST3 / 内蔵DSPのパラメータ
 - Bypass状態
@@ -505,24 +522,22 @@ VB-CABLEの公式署名済みドライバをそのまま利用するため、Mic
 - ウィンドウ位置 / サイズ
 - 自動アップデート確認設定
 
-一度チェーンを作れば、次回からMicVSTを起動するだけで同じ構成を再利用できます。
-
 ---
 
 # テスト
 
 GitHub ActionsのWindows環境で、アプリ本体・Unit Test・Setupのビルドを行っています。
 
-v1.2.0では内蔵DSPについて次をテストします。
+主なテスト：
 
-- 全11 DSPが登録され、生成できること
-- 音声を複数ブロック処理してもNaN / Infが出ないこと
-- 異常に発散しないこと
-- 新DSPの主要パラメータが存在すること
-- DSPパラメータのState保存 / 復元
-- Delayが指定時間後にエコーを出すこと
-- Reverbがインパルス後にTailを生成すること
-- Unison 8 Voicesが安定して処理できること
+- 全11 DSPの登録・生成・安定性
+- DSP State保存 / 復元
+- Delay echo / Reverb tail
+- Unison 8 Voices
+- **Output2が安全バッファ未満では部分音声を出さないこと**
+- **Output2でステレオ加工音が正しく複製されること**
+- **48kHz → 44.1kHzなど異なるSample Rateでも有限値・音声が出ること**
+- **Output2設定のState保存 / 復元**
 
 ---
 
@@ -548,12 +563,12 @@ JUCE AudioProcessorGraph
       ↓
 Built-in DSP / VST3 AudioPluginInstance
       ↓
-WASAPI Output → CABLE Input
-      ↓
-VB-CABLE signed driver
-      ↓
-CABLE Output
+      ├→ Primary WASAPI Output → CABLE Input → VB-CABLE → CABLE Output
+      │
+      └→ MonitorBuffer → Secondary WASAPI Device (Output2)
 ```
+
+Output2はPrimary callbackから加工済みサンプルをSPSCリングへ書き込み、別のAudioDeviceManagerのcallbackが読み出します。2つのデバイスのクロック差はキュー量に応じた小さなresampling ratio補正で吸収します。
 
 通常版ではVB-CABLEを使用しますが、将来用の実験的な独自Virtual Audio Driver実装も [`driver/`](driver/) に残しています。
 
@@ -592,7 +607,7 @@ Inno Setup 6をインストールした状態で：
 生成物：
 
 ```text
-installer\out\MicVST-Setup-1.2.0.exe
+installer\out\MicVST-Setup-1.3.0.exe
 ```
 
 ---

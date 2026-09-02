@@ -5,12 +5,14 @@
 #include "audio/Metering.h"
 #include "audio/PluginChain.h"
 #include "audio/MicVSTDeviceManager.h"
+#include "audio/SecondaryOutput.h"
 #include "audio/ScanCoordinator.h"
 #include "state/Persistence.h"
 
 // Besitzt AudioDeviceManager + AudioProcessorGraph. Der Graph läuft über einen
 // internen AudioProcessorPlayer; AudioEngine bleibt der Device-Callback und
-// metert Input/Output rund um den Player herum.
+// metert Input/Output rund um den Player herum. Ein zweiter, unabhängiger
+// AudioDeviceManager kann das fertig bearbeitete Signal optional auf Output2 spiegeln.
 class AudioEngine : private juce::AudioIODeviceCallback,
                     private juce::ChangeListener
 {
@@ -34,6 +36,13 @@ public:
     // Sucht ausschließlich den offiziellen VB-CABLE-Renderendpunkt ("CABLE Input").
     // MicVST verwaltet diesen Output automatisch; leer = VB-CABLE nicht installiert.
     juce::String detectCableOutput();
+
+    // Optionaler, frei wählbarer Monitoring-Ausgang. "" bedeutet Off. Output bleibt
+    // unabhängig davon fest auf CABLE Input, damit Discord/OBS weiter CABLE Output nutzen.
+    juce::StringArray getOutput2DeviceNames() { return secondaryOutput.deviceNames(); }
+    juce::String setOutput2Device (const juce::String& name) { return secondaryOutput.setDevice (name); }
+    juce::String getOutput2Device() const { return secondaryOutput.desiredDevice(); }
+    bool isOutput2Running() const { return secondaryOutput.isRunning(); }
 
     MicVSTState captureState();            // liest Devices + Plugin-Kette + Blobs
     void          applyState (const MicVSTState&);   // lädt Devices + Plugins + setStateInformation
@@ -128,6 +137,7 @@ private:
     void restoreChain (const juce::Array<PluginEntryState>&);
 
     MicVSTDeviceManager deviceManager;
+    SecondaryOutput secondaryOutput;
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer player;
     std::unique_ptr<PluginChain> pluginChain;

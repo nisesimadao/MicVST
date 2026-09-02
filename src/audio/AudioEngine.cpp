@@ -13,10 +13,18 @@ AudioEngine::AudioEngine()
     // setCurrentAudioDeviceType()/setAudioDeviceSetup() sowie die Device-Suche tun nichts.
     deviceManager.getAvailableDeviceTypes();
     deviceManager.addChangeListener (this);
+
+    secondaryOutput.onChanged = [this]
+    {
+        if (onStatusChanged) onStatusChanged();
+        if (onDeviceChanged) onDeviceChanged();
+    };
 }
 
 AudioEngine::~AudioEngine()
 {
+    secondaryOutput.onChanged = nullptr;
+    secondaryOutput.setDevice ({});
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (this);
     deviceManager.closeAudioDevice();
@@ -289,6 +297,7 @@ MicVSTState AudioEngine::captureState()
     deviceManager.getAudioDeviceSetup (setup);
     s.inputDevice  = setup.inputDeviceName;
     s.outputDevice = setup.outputDeviceName;
+    s.output2Device = secondaryOutput.desiredDevice();
     s.sampleRate   = setup.sampleRate;
     s.bufferSize   = preferredBufferSize;
     s.pluginFolders = pluginFolders;
@@ -326,6 +335,9 @@ void AudioEngine::applyState (const MicVSTState& s)
         ? "VB-CABLE host output = " + cableOutput
         : "VB-CABLE not found -> output 'none'");
     initialise (s.inputDevice, cableOutput);
+
+    if (const auto output2Error = setOutput2Device (s.output2Device); output2Error.isNotEmpty())
+        juce::Logger::writeToLog (output2Error);
 
     // Kette nur wiederherstellen, wenn alle Nicht-Builtin-Plugins im Cache auflösbar sind.
     // Sonst bis Scan-Ende zurückstellen (captureState liefert solange pendingPlugins,
@@ -400,6 +412,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         + " | outCh aktiv=" + juce::String (device->getActiveOutputChannels().countNumberOfSetBits())
         + " | sr=" + juce::String (device->getCurrentSampleRate(), 0)
         + " | buf=" + juce::String (device->getCurrentBufferSizeSamples()));
+    secondaryOutput.setSourceSampleRate (device->getCurrentSampleRate());
     player.audioDeviceAboutToStart (device);
 }
 
@@ -430,6 +443,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     if (numOutputChannels > 0)
     {
+        // Output2 gets the exact same post-DSP/post-VST samples as VB-CABLE, but its
+        // independent WASAPI clock is decoupled by MonitorBuffer.
+        secondaryOutput.push (const_cast<const float* const*> (outputChannelData),
+                              numOutputChannels, numSamples);
+
         juce::AudioBuffer<float> outView (outputChannelData, numOutputChannels, numSamples);
         outputMeter.process (outView);
     }

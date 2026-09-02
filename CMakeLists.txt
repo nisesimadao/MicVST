@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(MicVST VERSION 1.2.0 LANGUAGES C CXX)
+project(MicVST VERSION 1.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,6 +57,7 @@ juce_add_binary_data(MicVSTData SOURCES
 target_sources(MicVST PRIVATE
     src/Main.cpp
     src/audio/AudioEngine.cpp
+    src/audio/SecondaryOutput.cpp
     src/audio/PluginChain.cpp
     src/audio/BuiltinEffects.cpp
     src/ui/MainComponent.cpp
@@ -68,6 +69,7 @@ target_sources(MicVST PRIVATE
     src/state/AutostartRegistry.cpp
 )
 target_compile_definitions(MicVST PRIVATE
+    MICVST_VERSION="${PROJECT_VERSION}"
     JUCE_WASAPI=1
     JUCE_DIRECTSOUND=0
     JUCE_ASIO=0
@@ -103,6 +105,7 @@ target_sources(MicVSTTests PRIVATE
     tests/ScanTests.cpp
     tests/PickerTests.cpp
     tests/BuiltinEffectsTests.cpp
+    tests/Output2Tests.cpp
     src/audio/BuiltinEffects.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE

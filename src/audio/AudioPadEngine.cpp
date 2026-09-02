@@ -1,5 +1,7 @@
 #include "audio/AudioPadEngine.h"
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 AudioPadEngine::AudioPadEngine()
 {
@@ -152,7 +154,6 @@ void AudioPadEngine::restoreStates (const juce::Array<AudioPadState>& restored)
         if (s.filePath.isNotEmpty())
         {
             const auto err = loadFile (i, juce::File (s.filePath));
-            // Keep the missing path/name in state, so reconnecting a drive does not erase setup.
             if (err.isNotEmpty())
             {
                 const juce::ScopedLock sl (stateLock);
@@ -307,7 +308,7 @@ void AudioPadEngine::render (juce::AudioBuffer<float>& preFx,
                              juce::AudioBuffer<float>& output2Only,
                              int numSamples)
 {
-    const int n = juce::jmin ({ numSamples, preFx.getNumSamples(), postFx.getNumSamples(), output2Only.getNumSamples() });
+    const int n = std::min ({ numSamples, preFx.getNumSamples(), postFx.getNumSamples(), output2Only.getNumSamples() });
     preFx.clear (0, n);
     postFx.clear (0, n);
     output2Only.clear (0, n);

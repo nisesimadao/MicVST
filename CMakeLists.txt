@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # korrekt parsen und vermeidet C4819-Warnungen.
 if(MSVC)
     add_compile_options(/utf-8)
-    # Statische MSVC-Runtime -> voll-portable exe ohne VC++-Redistributable-Abhängigkeit。
+    # Statische MSVC-Runtime -> voll-portable exe ohne VC++-Redistributable-Abhängigkeit.
     # Gilt auch für JUCE, weil vor FetchContent gesetzt (CMP0091/NEW ab CMake 3.15).
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
@@ -69,6 +69,7 @@ target_sources(MicVST PRIVATE
     src/state/AutostartRegistry.cpp
 )
 target_compile_definitions(MicVST PRIVATE
+    MICVST_VERSION="${PROJECT_VERSION}"
     JUCE_WASAPI=1
     JUCE_DIRECTSOUND=0
     JUCE_ASIO=0

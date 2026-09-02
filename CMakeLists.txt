@@ -1,15 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(MicVST VERSION 1.3.0 LANGUAGES C CXX)
+project(MicVST VERSION 1.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Quelldateien sind UTF-8 (deutsche Kommentare mit Umlauten). /utf-8 lässt MSVC sie
-# korrekt parsen und vermeidet C4819-Warnungen.
 if(MSVC)
     add_compile_options(/utf-8)
-    # Statische MSVC-Runtime -> voll-portable exe ohne VC++-Redistributable-Abhängigkeit.
-    # Gilt auch für JUCE, weil vor FetchContent gesetzt (CMP0091/NEW ab CMake 3.15).
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
@@ -22,11 +18,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
-# --- Shared logic library (engine, state, audio helpers) ---
 add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
     src/audio/GraphConnections.cpp
     src/audio/ScanCoordinator.cpp
+    src/audio/AudioPadEngine.cpp
     src/state/Persistence.cpp
     src/state/PluginScanCache.cpp
     src/ui/PluginSearch.cpp
@@ -35,12 +31,12 @@ target_compile_features(MicVSTCore PUBLIC cxx_std_17)
 target_include_directories(MicVSTCore PUBLIC src)
 target_link_libraries(MicVSTCore PUBLIC
     juce::juce_audio_basics
+    juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_core
     juce::juce_data_structures
 )
 
-# --- GUI application ---
 juce_add_gui_app(MicVST
     PRODUCT_NAME "MicVST"
     COMPANY_NAME "MicVST"
@@ -48,7 +44,6 @@ juce_add_gui_app(MicVST
     ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/iconDarkMode.png"
 )
 
-# Beide Icon-Varianten als Binärdaten einbetten (für das theme-adaptive Tray-Icon).
 juce_add_binary_data(MicVSTData SOURCES
     resources/iconDarkMode.png
     resources/iconLightMode.png
@@ -62,6 +57,8 @@ target_sources(MicVST PRIVATE
     src/audio/BuiltinEffects.cpp
     src/ui/MainComponent.cpp
     src/ui/DevicePanel.cpp
+    src/ui/AudioPadPanel.cpp
+    src/ui/GlobalHotkey.cpp
     src/ui/PluginListView.cpp
     src/ui/PluginPicker.cpp
     src/ui/LevelMeterComponent.cpp
@@ -81,6 +78,7 @@ target_link_libraries(MicVST PRIVATE
     MicVSTCore
     MicVSTData
     juce::juce_audio_devices
+    juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_gui_basics
     juce::juce_gui_extra
@@ -88,9 +86,6 @@ target_link_libraries(MicVST PRIVATE
     juce::juce_recommended_warning_flags
 )
 
-# --- Driver helper (Windows only) ---
-# Creates/removes the ROOT\MicVSTVirtualAudio devnode and installs the supplied INF
-# using SetupAPI/NewDev. This replaces the old development-only devcon step.
 if(WIN32)
     add_executable(MicVSTDriverInstaller tools/DriverInstaller.cpp)
     target_compile_features(MicVSTDriverInstaller PRIVATE cxx_std_17)
@@ -98,7 +93,6 @@ if(WIN32)
     target_link_libraries(MicVSTDriverInstaller PRIVATE setupapi newdev)
 endif()
 
-# --- Unit tests (console app, JUCE UnitTestRunner) ---
 juce_add_console_app(MicVSTTests PRODUCT_NAME "MicVSTTests")
 target_sources(MicVSTTests PRIVATE
     tests/TestMain.cpp
@@ -106,6 +100,7 @@ target_sources(MicVSTTests PRIVATE
     tests/PickerTests.cpp
     tests/BuiltinEffectsTests.cpp
     tests/Output2Tests.cpp
+    tests/AudioPadTests.cpp
     src/audio/BuiltinEffects.cpp
 )
 target_compile_definitions(MicVSTTests PRIVATE
@@ -113,6 +108,7 @@ target_compile_definitions(MicVSTTests PRIVATE
 )
 target_link_libraries(MicVSTTests PRIVATE
     MicVSTCore
+    juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_audio_utils
     juce::juce_core

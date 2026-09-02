@@ -38,7 +38,7 @@ class MicVSTApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override    { return "MicVST"; }
-    const juce::String getApplicationVersion() override { return "1.3.0"; }
+    const juce::String getApplicationVersion() override { return MICVST_VERSION; }
 
     // Kind-Scanprozesse (--scan) laufen parallel zur Haupt-Instanz und dürfen nicht
     // von der Single-Instance-Logik weggefangen werden.
@@ -133,7 +133,7 @@ public:
             // Input: System-Standardmikrofon, sonst erstes verfügbares Eingangsgerät.
             auto& dm = engine->getDeviceManager();
             dm.setCurrentAudioDeviceType (dm.preferredTypeName(), true);
-            if (auto* type = dm.getCurrentDeviceTypeObject())
+            if (auto* type = dm.getCurrentAudioDeviceTypeObject())
             {
                 type->scanForDevices();
                 auto ins = type->getDeviceNames (true);
